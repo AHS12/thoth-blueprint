@@ -3,6 +3,7 @@ import { useSidebarState } from "@/hooks/use-sidebar-state";
 import { tableColors } from "@/lib/colors";
 import { colors, KeyboardShortcuts } from "@/lib/constants";
 import { type AppNode, type AppNoteNode, type AppZoneNode, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
+import { findNonOverlappingPosition } from "@/lib/utils";
 import { useStore, type StoreState } from "@/store/store";
 import { showSuccess } from "@/utils/toast";
 import { type ReactFlowInstance } from "@xyflow/react";
@@ -151,16 +152,19 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
 
   const handleCreateTable = (tableName: string) => {
     if (!diagram) return;
-    let position = { x: 200, y: 200 };
+    let defaultPosition = { x: 200, y: 200 };
     if (rfInstance) {
       const flowPosition = rfInstance.screenToFlowPosition({ x: window.innerWidth * 0.6, y: window.innerHeight / 2 });
-      position = { x: flowPosition.x - 144, y: flowPosition.y - 50 };
+      defaultPosition = { x: flowPosition.x - 144, y: flowPosition.y - 50 };
     }
+    
     const visibleNodes = diagram.data.nodes.filter((n: AppNode) => !n.data.isDeleted) || [];
+    const nonOverlappingPosition = findNonOverlappingPosition(visibleNodes, defaultPosition);
+    
     const newNode: AppNode = {
       id: `${tableName}-${+new Date()}`,
       type: "table",
-      position,
+      position: nonOverlappingPosition,
       data: {
         label: tableName,
         color: tableColors[Math.floor(Math.random() * tableColors.length)] ?? colors.DEFAULT_TABLE_COLOR,

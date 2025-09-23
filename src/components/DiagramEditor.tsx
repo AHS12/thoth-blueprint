@@ -7,7 +7,7 @@ import {
 import { tableColors } from "@/lib/colors";
 import { colors, DbRelationship, relationshipTypes } from "@/lib/constants";
 import { type AppEdge, type AppNode, type AppNoteNode, type AppZoneNode, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
-import { isNodeInLockedZone } from "@/lib/utils";
+import { findNonOverlappingPosition, isNodeInLockedZone } from "@/lib/utils";
 import { useStore, type StoreState } from "@/store/store";
 import { showError } from "@/utils/toast";
 import {
@@ -240,10 +240,13 @@ const DiagramEditor = forwardRef(
       if (!diagram) return;
       const visibleNodes = diagram.data.nodes.filter((n: AppNode) => !n.data.isDeleted) || [];
       const tableName = `new_table_${visibleNodes.length + 1}`;
+      const defaultPosition = { x: position.x - 144, y: position.y - 50 };
+      const nonOverlappingPosition = findNonOverlappingPosition(visibleNodes, defaultPosition);
+      
       const newNode: AppNode = {
         id: `${tableName}-${+new Date()}`,
         type: "table",
-        position: { x: position.x - 144, y: position.y - 50 },
+        position: nonOverlappingPosition,
         data: {
           label: tableName,
           color: tableColors[Math.floor(Math.random() * tableColors.length)] ?? colors.DEFAULT_TABLE_COLOR,

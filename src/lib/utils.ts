@@ -111,3 +111,110 @@ export function isNodeInLockedZone(
     (zone) => zone.data.isLocked && isNodeInsideZone(node, zone)
   );
 }
+
+// Check if two rectangles overlap
+function doRectanglesOverlap(
+  rect1: { x: number; y: number; width: number; height: number },
+  rect2: { x: number; y: number; width: number; height: number }
+): boolean {
+  return !(
+    rect1.x + rect1.width <= rect2.x ||
+    rect2.x + rect2.width <= rect1.x ||
+    rect1.y + rect1.height <= rect2.y ||
+    rect2.y + rect2.height <= rect1.y
+  );
+}
+
+// Find a non-overlapping position for a new table
+export function findNonOverlappingPosition(
+  existingNodes: CombinedNode[],
+  preferredPosition: { x: number; y: number },
+  nodeWidth: number = 288,
+  nodeHeight: number = 100,
+  spacing: number = 50
+): { x: number; y: number } {
+  // Check if preferred position is free
+  const hasOverlap = existingNodes.some((node) => {
+    if (!node.position) return false;
+    
+    const existingRect = {
+      x: node.position.x,
+      y: node.position.y,
+      width: node.width || (node.type === "table" ? 288 : node.type === "note" ? 192 : 300),
+      height: node.height || (node.type === "table" ? 100 : node.type === "note" ? 192 : 300),
+    };
+
+    const newRect = {
+      x: preferredPosition.x,
+      y: preferredPosition.y,
+      width: nodeWidth,
+      height: nodeHeight,
+    };
+
+    return doRectanglesOverlap(newRect, existingRect);
+  });
+
+  if (!hasOverlap) {
+    return preferredPosition;
+  }
+
+  // try positions in a grid around the preferred position
+  const gridSize = nodeWidth + spacing;
+  
+  for (let distance = 1; distance <= 10; distance++) {
+    const positions = [
+      { x: preferredPosition.x + distance * gridSize, y: preferredPosition.y },
+      { x: preferredPosition.x - distance * gridSize, y: preferredPosition.y },
+      { x: preferredPosition.x, y: preferredPosition.y + distance * gridSize },
+      { x: preferredPosition.x, y: preferredPosition.y - distance * gridSize },
+      { x: preferredPosition.x + distance * gridSize, y: preferredPosition.y + distance * gridSize },
+      { x: preferredPosition.x - distance * gridSize, y: preferredPosition.y - distance * gridSize },
+      { x: preferredPosition.x + distance * gridSize, y: preferredPosition.y - distance * gridSize },
+      { x: preferredPosition.x - distance * gridSize, y: preferredPosition.y + distance * gridSize },
+    ];
+
+    for (const candidate of positions) {
+      const candidateRect = {
+        x: candidate.x,
+        y: candidate.y,
+        width: nodeWidth,
+        height: nodeHeight,
+      };
+
+      const hasCandidateOverlap = existingNodes.some((node) => {
+        if (!node.position) return false;
+        
+        const existingRect = {
+          x: node.position.x,
+          y: node.position.y,
+          width: node.width || (node.type === "table" ? 288 : node.type === "note" ? 192 : 300),
+          height: node.height || (node.type === "table" ? 100 : node.type === "note" ? 192 : 300),
+        };
+
+        return doRectanglesOverlap(candidateRect, existingRect);
+      });
+
+      if (!hasCandidateOverlap) {
+        return candidate;
+      }
+    }
+  }
+  
+  // If all else fails, overlap on the last added table
+  const lastAddedNode = existingNodes
+    .filter(node => node.position)
+    .sort((a, b) => {
+      const orderA = typeof a.data.order === 'number' ? a.data.order : 0;
+      const orderB = typeof b.data.order === 'number' ? b.data.order : 0;
+      return orderB - orderA;
+    })[0];
+  
+  if (lastAddedNode && lastAddedNode.position) {
+    return {
+      x: lastAddedNode.position.x + 20,
+      y: lastAddedNode.position.y + 20,
+    };
+  }
+  
+  return preferredPosition;
+}
