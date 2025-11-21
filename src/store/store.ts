@@ -153,11 +153,15 @@ const debouncedSaveFull = debounce(
           .map((d) => d.id)
           .filter(Boolean) as number[];
 
-        const idsToDelete = allDbDiagramIds.filter(
-          (id) => !storeDiagramIds.includes(id)
-        );
-        if (idsToDelete.length > 0) {
-          await db.diagrams.bulkDelete(idsToDelete);
+        // Safety guard: do not bulk delete when store has no diagrams
+        // This prevents accidental full data wipe if a save triggers before load
+        if (storeDiagramIds.length > 0) {
+          const idsToDelete = allDbDiagramIds.filter(
+            (id) => !storeDiagramIds.includes(id)
+          );
+          if (idsToDelete.length > 0) {
+            await db.diagrams.bulkDelete(idsToDelete);
+          }
         }
 
         if (diagrams.length > 0) {
