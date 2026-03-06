@@ -107,6 +107,27 @@ export default function EdgeInspectorPanel({ edge, nodes }: EdgeInspectorPanelPr
                     </SelectContent>
                 </Select>
             </div>
+            <div className="my-4">
+                <Label>Manual Adjustment</Label>
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full mt-2"
+                    onClick={() => {
+                        const { centerX, centerY, ...restData } = edge.data || {};
+                        updateEdge({
+                            ...edge,
+                            data: {
+                                ...restData,
+                                relationship: edge.data?.relationship || DbRelationship.ONE_TO_MANY
+                            }
+                        });
+                    }}
+                    disabled={isLocked || (edge.data?.centerX === undefined && edge.data?.centerY === undefined)}
+                >
+                    Reset Position
+                </Button>
+            </div>
             <Separator />
             <div className="mt-6">
                 <AlertDialog>

@@ -15,6 +15,8 @@ export type ProcessedEdge = Omit<AppEdge, "type"> & {
     relationship: string;
     isHighlighted: boolean;
     isPositionLocked?: boolean;
+    centerX?: number;
+    centerY?: number;
   };
 };
 
@@ -123,6 +125,8 @@ export interface EdgeData extends Record<string, unknown> {
   onDelete?: string;
   onUpdate?: string;
   isComposite?: boolean;
+  centerX?: number;
+  centerY?: number;
 }
 
 export interface Settings {

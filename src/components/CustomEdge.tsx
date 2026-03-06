@@ -5,8 +5,9 @@ import {
   EdgeLabelRenderer,
   type EdgeProps,
   getSmoothStepPath,
+  useReactFlow,
 } from "@xyflow/react";
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import React from "react";
 
 const EdgeIndicator = ({
@@ -65,8 +66,36 @@ const getTotalPathLength = (pathData: string) => {
   return pathNode.getTotalLength();
 };
 
+const EdgeHandle = ({
+  x,
+  y,
+  onMouseDown,
+}: {
+  x: number;
+  y: number;
+  onMouseDown: (event: React.MouseEvent) => void;
+}) => (
+  <div
+    style={{
+      position: "absolute",
+      transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
+      background: colors.HIGHLIGHT,
+      width: "12px",
+      height: "12px",
+      borderRadius: "50%",
+      cursor: "grab",
+      pointerEvents: "all",
+      zIndex: 1001,
+      border: "2px solid white",
+    }}
+    onMouseDown={onMouseDown}
+    className="nodrag nopan"
+  />
+);
+
 function CustomEdge(props: EdgeProps) {
   const {
+    id,
     sourceX,
     sourceY,
     targetX,
@@ -75,11 +104,14 @@ function CustomEdge(props: EdgeProps) {
     targetPosition,
     data,
     style = {},
+    selected,
   } = props;
+
+  const { setEdges } = useReactFlow();
 
   // Type assertion for the data property
   const edgeData = data as EdgeData | undefined;
-  const [edgePath] = getSmoothStepPath({
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -87,11 +119,54 @@ function CustomEdge(props: EdgeProps) {
     targetY,
     targetPosition,
     borderRadius: 10,
+    ...(edgeData?.centerX !== undefined ? { centerX: edgeData.centerX } : {}),
+    ...(edgeData?.centerY !== undefined ? { centerY: edgeData.centerY } : {}),
   });
+
+  const onHandleMouseDown = useCallback(
+    (event: React.MouseEvent) => {
+      event.stopPropagation();
+      
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const initialCenterX = edgeData?.centerX ?? labelX;
+      const initialCenterY = edgeData?.centerY ?? labelY;
+
+      const onPointerMove = (e: MouseEvent) => {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        setEdges((edges) =>
+          edges.map((e) => {
+            if (e.id === id) {
+              return {
+                ...e,
+                data: {
+                  ...e.data,
+                  centerX: initialCenterX + dx,
+                  centerY: initialCenterY + dy,
+                },
+              };
+            }
+            return e;
+          })
+        );
+      };
+
+      const onPointerUp = () => {
+        window.removeEventListener("mousemove", onPointerMove);
+        window.removeEventListener("mouseup", onPointerUp);
+      };
+
+      window.addEventListener("mousemove", onPointerMove);
+      window.addEventListener("mouseup", onPointerUp);
+    },
+    [edgeData, labelX, labelY, id, setEdges]
+  );
 
   const { isHighlighted, relationship } = edgeData || {};
 
-  const { sourcePoint, targetPoint } = useMemo(() => {
+  const { sourcePoint, targetPoint, handlePoints } = useMemo(() => {
     const pathLength = getTotalPathLength(edgePath);
     const distance = 40;
     const safeDistance = Math.min(distance, pathLength / 2 - 5);
@@ -99,7 +174,17 @@ function CustomEdge(props: EdgeProps) {
     const sp = getPointAlongPath(edgePath, safeDistance);
     const tp = getPointAlongPath(edgePath, pathLength - safeDistance);
 
-    return { sourcePoint: sp, targetPoint: tp };
+    // Calculate multiple handle points
+    const handles = [];
+    if (pathLength > 0) {
+      // Add points at 25%, 50% (label position), and 75%
+      handles.push(getPointAlongPath(edgePath, pathLength * 0.25));
+      // Middle point is already labelX/labelY, but we can add it here too if we want uniformity
+      // handles.push({ x: labelX, y: labelY }); 
+      handles.push(getPointAlongPath(edgePath, pathLength * 0.75));
+    }
+
+    return { sourcePoint: sp, targetPoint: tp, handlePoints: handles };
   }, [edgePath]);
 
   let sourceLabel = "";
@@ -161,6 +246,19 @@ function CustomEdge(props: EdgeProps) {
           label={targetLabel}
           isHighlighted={isHighlighted ?? false}
         />
+        {selected && (
+          <>
+            <EdgeHandle x={labelX} y={labelY} onMouseDown={onHandleMouseDown} />
+            {handlePoints?.map((point, index) => (
+              <EdgeHandle
+                key={index}
+                x={point.x}
+                y={point.y}
+                onMouseDown={onHandleMouseDown}
+              />
+            ))}
+          </>
+        )}
       </EdgeLabelRenderer>
     </>
   );
@@ -179,6 +277,7 @@ const MemoizedCustomEdge = React.memo(CustomEdge, (prevProps, nextProps) => {
     prevProps.targetY === nextProps.targetY &&
     prevProps.sourcePosition === nextProps.sourcePosition &&
     prevProps.targetPosition === nextProps.targetPosition &&
+    prevProps.selected === nextProps.selected &&
     // Compare edge data
     JSON.stringify(prevProps.data) === JSON.stringify(nextProps.data) &&
     // Compare style
