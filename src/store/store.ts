@@ -10,6 +10,7 @@ import {
     type DatabaseType,
     type Diagram,
 } from "@/lib/types";
+import { findExistingRelationship } from "@/lib/utils";
 import {
     applyEdgeChanges,
     applyNodeChanges,
@@ -678,6 +679,20 @@ export const useStore = create(
       set((state) => {
         const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
         if (!diagram) return state;
+        
+        const existingEdge = findExistingRelationship(
+          diagram.data.edges || [],
+          edge.source,
+          edge.target,
+          edge.sourceHandle || '',
+          edge.targetHandle || ''
+        );
+        
+        // If duplicate exists, don't add it
+        if (existingEdge) {
+          return state;
+        }
+        
         const newEdges = [...(diagram.data.edges || []), edge];
         
         const updatedDiagrams = state.diagrams.map((d) =>

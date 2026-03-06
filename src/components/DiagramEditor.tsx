@@ -7,7 +7,7 @@ import {
 import { tableColors } from "@/lib/colors";
 import { colors, DbRelationship, relationshipTypes } from "@/lib/constants";
 import { type AppEdge, type AppNode, type AppNoteNode, type AppZoneNode, type CombinedNode, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
-import { DEFAULT_NODE_SPACING, DEFAULT_TABLE_HEIGHT, DEFAULT_TABLE_WIDTH, findNonOverlappingPosition, getCanvasDimensions, isNodeInLockedZone, isNodeInsideZone } from "@/lib/utils";
+import { DEFAULT_NODE_SPACING, DEFAULT_TABLE_HEIGHT, DEFAULT_TABLE_WIDTH, findExistingRelationship, findNonOverlappingPosition, getCanvasDimensions, getColumnId, isNodeInLockedZone, isNodeInsideZone } from "@/lib/utils";
 import { useStore, type StoreState } from "@/store/store";
 import { showError } from "@/utils/toast";
 import {
@@ -381,10 +381,6 @@ const DiagramEditor = forwardRef(
       const { source, target, sourceHandle, targetHandle } = connection;
       if (!source || !target || !sourceHandle || !targetHandle) return;
 
-      const getColumnId = (handleId: string) => {
-        const parts = handleId.split('-');
-        return parts.slice(0, -2).join('-');
-      };
       const sourceNode = nodesMap.get(source);
       const targetNode = nodesMap.get(target);
       if (!sourceNode || !targetNode) return;
@@ -400,6 +396,20 @@ const DiagramEditor = forwardRef(
         return;
       }
 
+      // Check for duplicate relationships
+      const existingEdge = findExistingRelationship(
+        edges,
+        source,
+        target,
+        sourceHandle,
+        targetHandle
+      );
+      
+      if (existingEdge) {
+        showError("This relationship already exists.");
+        return;
+      }
+
       const newEdge: AppEdge = {
         ...connection,
         id: `${source}-${target}-${sourceHandle}-${targetHandle}`,
@@ -407,7 +417,7 @@ const DiagramEditor = forwardRef(
         data: { relationship: relationshipTypes[1]?.value || DbRelationship.ONE_TO_MANY },
       };
       addEdgeToStore(newEdge);
-    }, [nodesMap, addEdgeToStore]);
+    }, [nodesMap, edges, addEdgeToStore]);
 
   const onInit = useCallback((instance: ReactFlowInstance<ProcessedNode, ProcessedEdge>) => {
     rfInstanceRef.current = instance;
