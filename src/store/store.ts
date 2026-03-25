@@ -10,6 +10,7 @@ import {
     type DatabaseType,
     type Diagram,
 } from "@/lib/types";
+import { findExistingRelationship } from "@/lib/utils";
 import {
     applyEdgeChanges,
     applyNodeChanges,
@@ -153,11 +154,15 @@ const debouncedSaveFull = debounce(
           .map((d) => d.id)
           .filter(Boolean) as number[];
 
-        const idsToDelete = allDbDiagramIds.filter(
-          (id) => !storeDiagramIds.includes(id)
-        );
-        if (idsToDelete.length > 0) {
-          await db.diagrams.bulkDelete(idsToDelete);
+        // Safety guard: do not bulk delete when store has no diagrams
+        // This prevents accidental full data wipe if a save triggers before load
+        if (storeDiagramIds.length > 0) {
+          const idsToDelete = allDbDiagramIds.filter(
+            (id) => !storeDiagramIds.includes(id)
+          );
+          if (idsToDelete.length > 0) {
+            await db.diagrams.bulkDelete(idsToDelete);
+          }
         }
 
         if (diagrams.length > 0) {
@@ -674,6 +679,20 @@ export const useStore = create(
       set((state) => {
         const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
         if (!diagram) return state;
+        
+        const existingEdge = findExistingRelationship(
+          diagram.data.edges || [],
+          edge.source,
+          edge.target,
+          edge.sourceHandle || '',
+          edge.targetHandle || ''
+        );
+        
+        // If duplicate exists, don't add it
+        if (existingEdge) {
+          return state;
+        }
+        
         const newEdges = [...(diagram.data.edges || []), edge];
         
         const updatedDiagrams = state.diagrams.map((d) =>

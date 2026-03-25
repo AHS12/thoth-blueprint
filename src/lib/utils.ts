@@ -1,4 +1,4 @@
-import { type AppZoneNode, type CombinedNode } from "@/lib/types";
+import { type AppEdge, type AppZoneNode, type CombinedNode } from "@/lib/types";
 import { clsx, type ClassValue } from "clsx";
 import { saveAs } from "file-saver";
 import JSZip from "jszip";
@@ -322,4 +322,44 @@ export function uuid(): string {
     // ignore crypto.randomUUID() errors, fallback will be used
   }
   return `uuid_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+}
+
+export function getColumnId(handleId: string): string {
+  if (!handleId) return '';
+  const parts = handleId.split('-');
+  // Handles are typically format: "col_123-right-source" or "col_123-left-target"
+  // So we remove the last two parts to get the column ID
+  return parts.slice(0, -2).join('-');
+}
+
+export function findExistingRelationship(
+  edges: AppEdge[],
+  source: string,
+  target: string,
+  sourceHandle: string,
+  targetHandle: string
+): AppEdge | undefined {
+  const newSourceColumnId = getColumnId(sourceHandle);
+  const newTargetColumnId = getColumnId(targetHandle);
+
+  return edges.find(edge => {
+    const edgeSourceColumnId = getColumnId(edge.sourceHandle || '');
+    const edgeTargetColumnId = getColumnId(edge.targetHandle || '');
+
+    // Check for same relationship (same direction)
+    const isSameDirection = 
+      edge.source === source && 
+      edge.target === target &&
+      edgeSourceColumnId === newSourceColumnId && 
+      edgeTargetColumnId === newTargetColumnId;
+      
+    // Check for same relationship (reverse direction)
+    const isReverseDirection = 
+      edge.source === target && 
+      edge.target === source &&
+      edgeSourceColumnId === newTargetColumnId && 
+      edgeTargetColumnId === newSourceColumnId;
+      
+    return isSameDirection || isReverseDirection;
+  });
 }

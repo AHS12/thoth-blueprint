@@ -3,7 +3,7 @@ import { useSidebarState } from "@/hooks/use-sidebar-state";
 import { tableColors } from "@/lib/colors";
 import { colors, KeyboardShortcuts } from "@/lib/constants";
 import { ElementType, type AppEdge, type AppNode, type AppNoteNode, type AppZoneNode, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
-import { DEFAULT_NODE_SPACING, DEFAULT_TABLE_HEIGHT, DEFAULT_TABLE_WIDTH, findNonOverlappingPosition, getCanvasDimensions } from "@/lib/utils";
+import { DEFAULT_NODE_SPACING, DEFAULT_TABLE_HEIGHT, DEFAULT_TABLE_WIDTH, findExistingRelationship, findNonOverlappingPosition, getCanvasDimensions } from "@/lib/utils";
 import { useStore, type StoreState } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { type ReactFlowInstance } from "@xyflow/react";
@@ -342,6 +342,20 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
 
     const sourceHandle = `${sourceColumnId}-right-source`;
     const targetHandle = `${targetColumnId}-left-target`;
+
+    // Check for duplicate relationships
+    const existingEdge = findExistingRelationship(
+      diagram.data.edges || [],
+      sourceNodeId,
+      targetNodeId,
+      sourceHandle,
+      targetHandle
+    );
+    
+    if (existingEdge) {
+      showError("This relationship already exists.");
+      return;
+    }
 
     const newEdge: AppEdge = {
       id: `${sourceNodeId}-${targetNodeId}-${sourceHandle}-${targetHandle}`,
