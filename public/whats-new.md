@@ -1,3 +1,25 @@
+# What’s New in ThothBlueprint v0.0.8
+
+This release focuses on improving relationship lines, offering manual layout adjustments, and fixing issues with duplicate relationships in complex diagrams.
+
+## Highlights
+
+- **Manual Adjustment of Relationship Lines:** You can now manually adjust the path of relationship lines to untangle complex diagrams and improve readability.
+- **Duplicate Relationship Prevention:** Added validation to prevent the creation of duplicate relationships between table fields.
+
+## New & Improved
+
+- **Draggable Relationship Handles:** Selected edges now feature draggable handles, allowing for interactive position adjustments.
+- **Reset Manual Adjustments:** Added a reset button in the inspector panel to quickly clear any manual position adjustments and revert to auto-routing.
+- **Improved Edge Routing:** Edge path calculations now intelligently use your manual center points when available.
+- **Duplicate Detection:** The diagram editor now detects both same-direction and reverse-direction duplicate connections by comparing source/target nodes and column handles.
+
+## Bug Fixes
+
+- Fixed an issue where duplicate relationships between tables could still be created by dragging connection points (Issue #37).
+
+---
+
 # What’s New in ThothBlueprint v0.0.7
 
 This release brings major importer upgrades, MySQL PostgreSQL schema dump importer support, UI improvements, and performance optimizations tailored for large real‑world schemas.
