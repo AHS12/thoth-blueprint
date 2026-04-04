@@ -7,6 +7,7 @@ This release focuses on onboarding experience, in-app guidance, and editor respo
 - **Guided Onboarding Tour:** Added a reusable product tour for both Gallery and Editor with contextual steps and spotlight guidance.
 - **Help Center:** Introduced a dedicated Help Center dialog with quick access to tour, shortcuts, and release notes.
 - **Performance Pass:** Improved editor responsiveness by reducing heavy comparisons and tightening update paths in critical interaction flows.
+- **Checkpoint System:** Added diagram checkpoints with migration safeguards, manual checkpoint creation, interval-based automatic capture, and restore history.
 
 ## New & Improved
 
@@ -16,6 +17,11 @@ This release focuses on onboarding experience, in-app guidance, and editor respo
 - **Table Copy UX:** Added copy actions in table menus (including the 3-dot menu) with improved popover behavior after copy.
 - **Clipboard Indicator:** Added a visible copied-items indicator in the editor so paste readiness is always clear.
 - **Edge Interaction Reliability:** Improved edge selection handling so relationship interactions are more consistent.
+- **Checkpoint Migration Flow:** Added a post-update, user-controlled checkpoint migration prompt with backup-first behavior before enabling migration.
+- **Manual Checkpoints:** Added one-click manual checkpoint creation with optional labels for easier recovery milestones.
+- **Automatic Checkpoints:** Added interval-based automatic checkpoint capture with configurable settings and retention pruning.
+- **Checkpoint Browser:** Added checkpoint history browsing with preview details and restore confirmation.
+- **Checkpoint Visibility in Sidebar:** Added clickable checkpoint totals in editor metadata to open checkpoint history quickly.
 
 ## Performance & Stability
 
@@ -23,6 +29,7 @@ This release focuses on onboarding experience, in-app guidance, and editor respo
 - Optimized paste flow to use an atomic state update and improved node ID generation reliability.
 - Fixed store consistency by ensuring diagram map synchronization across diagram mutation actions.
 - Reduced callback/dependency churn in editor interaction handlers to avoid avoidable rerenders.
+- Added background checkpoint interval ticks while editing to avoid reload-coupled checkpoint creation behavior.
 
 ## Bug Fixes
 

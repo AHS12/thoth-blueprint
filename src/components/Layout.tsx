@@ -1,5 +1,6 @@
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSidebarState } from "@/hooks/use-sidebar-state";
+import { exportDbToJson } from "@/lib/backup";
 import { tableColors } from "@/lib/colors";
 import { colors, KeyboardShortcuts } from "@/lib/constants";
 import { ElementType, type AppEdge, type AppNode, type AppNoteNode, type AppZoneNode, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
@@ -15,6 +16,7 @@ import { AddNoteDialog } from "./AddNoteDialog";
 import { AddRelationshipDialog } from "./AddRelationshipDialog";
 import { AddTableDialog } from "./AddTableDialog";
 import { AddZoneDialog } from "./AddZoneDialog";
+import { CheckpointMigrationDialog } from "./CheckpointMigrationDialog";
 import DiagramEditor from "./DiagramEditor";
 import DiagramGallery from "./DiagramGallery";
 import { DiagramLayout } from "./DiagramLayout";
@@ -34,6 +36,9 @@ interface LayoutProps {
 const GUIDED_EXPERIENCE_OPENED_GALLERY_KEY = "guidedExperienceOpened.gallery";
 const GUIDED_EXPERIENCE_OPENED_EDITOR_KEY = "guidedExperienceOpened.editor";
 const ONBOARDING_COMPLETED_KEY = "onboardingCompleted";
+const CHECKPOINT_MIGRATION_ACK_VERSION_KEY = "checkpointMigrationAcknowledgedVersion";
+const CHECKPOINT_MIGRATION_PREFERENCE_KEY = "checkpointMigrationPreference";
+const AUTO_CHECKPOINT_TICK_MS = 30_000;
 
 function getGuidedExperienceOpenedKey(mode: "gallery" | "editor") {
   return mode === "editor"
@@ -61,7 +66,17 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
     [diagram]
   )
 
-  const { addNode, undoDelete, copyNodes, pasteNodes, lastCursorPosition, addEdge, setIsAddRelationshipDialogOpen } = useStore(
+  const {
+    addNode,
+    undoDelete,
+    copyNodes,
+    pasteNodes,
+    lastCursorPosition,
+    addEdge,
+    setIsAddRelationshipDialogOpen,
+    runCheckpointMigration,
+    runAutomaticCheckpointTick,
+  } = useStore(
     useShallow((state: StoreState) => ({
       addNode: state.addNode,
       undoDelete: state.undoDelete,
@@ -70,6 +85,8 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       lastCursorPosition: state.lastCursorPosition,
       addEdge: state.addEdge,
       setIsAddRelationshipDialogOpen: state.setIsRelationshipDialogOpen,
+      runCheckpointMigration: state.runCheckpointMigration,
+      runAutomaticCheckpointTick: state.runAutomaticCheckpointTick,
     }))
   );
 
@@ -94,6 +111,8 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
   const [isHelpCenterOpen, setIsHelpCenterOpen] = useState(false);
   const [isAddElementDialogOpen, setIsAddElementDialogOpen] = useState(false);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+  const [isCheckpointMigrationDialogOpen, setIsCheckpointMigrationDialogOpen] = useState(false);
+  const [isCheckpointMigrationProcessing, setIsCheckpointMigrationProcessing] = useState(false);
   const [isWhatsNewPendingAfterTour, setIsWhatsNewPendingAfterTour] = useState(false);
   const [whatsNewPendingTourMode, setWhatsNewPendingTourMode] = useState<"gallery" | "editor" | null>(null);
   const [isProductTourOpen, setIsProductTourOpen] = useState(false);
@@ -233,6 +252,51 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       });
   };
 
+  const maybePromptCheckpointMigration = useCallback(() => {
+    const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+    const acknowledgedVersion = localStorage.getItem(CHECKPOINT_MIGRATION_ACK_VERSION_KEY);
+    if (acknowledgedVersion === currentVersion) {
+      return;
+    }
+
+    const preference = localStorage.getItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY);
+    if (preference === "enabled") {
+      return;
+    }
+
+    setIsCheckpointMigrationDialogOpen(true);
+  }, []);
+
+  const handleCheckpointMigrationLater = useCallback(() => {
+    const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+    localStorage.setItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY, "deferred");
+    localStorage.setItem(CHECKPOINT_MIGRATION_ACK_VERSION_KEY, currentVersion);
+    setIsCheckpointMigrationDialogOpen(false);
+  }, []);
+
+  const handleEnableCheckpointMigration = useCallback(async () => {
+    setIsCheckpointMigrationProcessing(true);
+    try {
+      // Mandatory backup-first guard before running any migration logic.
+      exportDbToJson();
+
+      const result = await runCheckpointMigration();
+      const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+      localStorage.setItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY, "enabled");
+      localStorage.setItem(CHECKPOINT_MIGRATION_ACK_VERSION_KEY, currentVersion);
+      setIsCheckpointMigrationDialogOpen(false);
+
+      if (!result.skipped) {
+        showSuccess(`Checkpoint migration completed. ${result.migratedCount} baseline checkpoints created.`);
+      }
+    } catch (error) {
+      console.error("Checkpoint migration failed:", error);
+      showError("Failed to enable checkpoints. You can try again later.");
+    } finally {
+      setIsCheckpointMigrationProcessing(false);
+    }
+  }, [runCheckpointMigration]);
+
   const startProductTour = useCallback((markAsOpened = true) => {
     setTourMode(currentTourMode);
     setIsProductTourOpen(true);
@@ -258,6 +322,20 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       return;
     }
   }, [isLoading, currentTourMode, startProductTour]);
+
+  useEffect(() => {
+    if (isLoading || !selectedDiagramId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void runAutomaticCheckpointTick();
+    }, AUTO_CHECKPOINT_TICK_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isLoading, selectedDiagramId, runAutomaticCheckpointTick]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -465,8 +543,8 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
     }
 
     // Create column maps for O(1) lookups
-    const sourceColumnsMap = new Map(sourceNode.data.columns.map(col => [col.id, col]));
-    const targetColumnsMap = new Map(targetNode.data.columns.map(col => [col.id, col]));
+    const sourceColumnsMap = new Map(sourceNode?.data.columns.map(col => [col.id, col]));
+    const targetColumnsMap = new Map(targetNode?.data.columns.map(col => [col.id, col]));
 
     const sourceColumn = sourceColumnsMap.get(sourceColumnId);
     const targetColumn = targetColumnsMap.get(targetColumnId);
@@ -591,10 +669,17 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
           if (!open) {
             const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
             localStorage.setItem('whatsNewSeenVersion', currentVersion);
+            maybePromptCheckpointMigration();
           }
         }}
         markdown={whatsNewMarkdown}
         onStartTour={startProductTour}
+      />
+      <CheckpointMigrationDialog
+        isOpen={isCheckpointMigrationDialogOpen}
+        isProcessing={isCheckpointMigrationProcessing}
+        onEnableNow={handleEnableCheckpointMigration}
+        onLater={handleCheckpointMigrationLater}
       />
       <ProductTour
         isOpen={isProductTourOpen}

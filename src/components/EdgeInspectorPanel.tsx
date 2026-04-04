@@ -109,12 +109,12 @@ export default function EdgeInspectorPanel({ edge, nodes }: EdgeInspectorPanelPr
             </div>
             <div className="my-4">
                 <Label>Manual Adjustment</Label>
-                <Button 
-                    variant="outline" 
-                    size="sm" 
+                <Button
+                    variant="outline"
+                    size="sm"
                     className="w-full mt-2"
                     onClick={() => {
-                        const { centerX, centerY, ...restData } = edge.data || {};
+                        const { ...restData } = edge.data || {};
                         updateEdge({
                             ...edge,
                             data: {

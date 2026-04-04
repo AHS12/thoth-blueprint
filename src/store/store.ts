@@ -1,4 +1,9 @@
-import { DEFAULT_SETTINGS } from "@/lib/constants";
+import {
+  CHECKPOINT_GLOBAL_COUNTER_KEY,
+  CHECKPOINT_MIGRATION_STATUS_KEY,
+  CHECKPOINT_MIGRATION_VERSION_KEY,
+  DEFAULT_SETTINGS,
+} from "@/lib/constants";
 import { db } from "@/lib/db";
 import { organizeTablesByRelationshipsWithZones } from "@/lib/layout-algorithms";
 import {
@@ -7,8 +12,10 @@ import {
   type AppNode,
   type AppNoteNode,
   type AppZoneNode,
+  type CheckpointType,
   type DatabaseType,
   type Diagram,
+  type DiagramCheckpoint,
 } from "@/lib/types";
 import { findExistingRelationship } from "@/lib/utils";
 import {
@@ -70,6 +77,18 @@ export interface StoreState {
   setOnlyRenderVisibleElements: (value: boolean) => void;
   reorganizeTables: () => void;
   toggleLock: () => void;
+  createCheckpoint: (
+    type?: CheckpointType,
+    triggerReason?: string,
+    label?: string,
+  ) => Promise<DiagramCheckpoint | null>;
+  listCheckpoints: (diagramId?: number) => Promise<DiagramCheckpoint[]>;
+  restoreCheckpoint: (checkpointId: number) => Promise<boolean>;
+  runCheckpointMigration: () => Promise<{
+    migratedCount: number;
+    skipped: boolean;
+  }>;
+  runAutomaticCheckpointTick: () => Promise<void>;
 }
 
 export const TABLE_SOFT_DELETE_LIMIT = 10;
@@ -96,6 +115,31 @@ function updateDiagramsWithMap(
   return {
     diagrams: updatedDiagrams,
     diagramsMap: createDiagramsMap(updatedDiagrams),
+  };
+}
+
+function sanitizeCheckpointSettings(settings: Settings): Settings {
+  const intervalMinutes = Math.max(
+    5,
+    Math.min(240, Math.round(settings.checkpoints.intervalMinutes || 5)),
+  );
+  const retentionHours = Math.max(
+    1,
+    Math.min(40, Math.round(settings.checkpoints.retentionHours || 1)),
+  );
+  const maxCountPerDiagram = Math.max(
+    1,
+    Math.min(100, Math.round(settings.checkpoints.maxCountPerDiagram || 1)),
+  );
+
+  return {
+    ...settings,
+    checkpoints: {
+      ...settings.checkpoints,
+      intervalMinutes,
+      retentionHours,
+      maxCountPerDiagram,
+    },
   };
 }
 
@@ -134,6 +178,10 @@ function hasSameNodeContentExcludingPosition(
 
 let previousDiagrams: Diagram[] = [];
 let previousSelectedDiagramId: number | null = null;
+const checkpointStatsByDiagramId = new Map<
+  number,
+  { meaningfulChanges: number; lastCheckpointAt: number }
+>();
 
 const debouncedSavePositions = debounce(
   async (diagrams: Diagram[], selectedDiagramId: number | null) => {
@@ -410,8 +458,218 @@ async function saveSpecificNodePositions(
   }
 }
 
-export const useStore = create(
-  subscribeWithSelector<StoreState>((set) => ({
+async function runCheckpointMigrationInDb(): Promise<{
+  migratedCount: number;
+  skipped: boolean;
+}> {
+  const migrationVersion = 1;
+  const statusState = await db.appState.get(CHECKPOINT_MIGRATION_STATUS_KEY);
+  const versionState = await db.appState.get(CHECKPOINT_MIGRATION_VERSION_KEY);
+
+  if (
+    statusState?.value === "completed" &&
+    typeof versionState?.value === "number" &&
+    versionState.value >= migrationVersion
+  ) {
+    return { migratedCount: 0, skipped: true };
+  }
+
+  await db.appState.put({
+    key: CHECKPOINT_MIGRATION_STATUS_KEY,
+    value: "running",
+  });
+
+  const now = new Date();
+  const diagrams = await db.diagrams.toArray();
+
+  const existingMigrationCheckpoints = await db.checkpoints
+    .where("type")
+    .equals("migration")
+    .toArray();
+  const migratedDiagramIds = new Set(
+    existingMigrationCheckpoints.map((c) => c.diagramId),
+  );
+
+  const globalCounterState = await db.appState.get(
+    CHECKPOINT_GLOBAL_COUNTER_KEY,
+  );
+  let nextCheckpointNumber =
+    typeof globalCounterState?.value === "number"
+      ? globalCounterState.value
+      : 0;
+
+  const checkpointsToAdd: DiagramCheckpoint[] = [];
+  for (const diagram of diagrams) {
+    if (!diagram.id || migratedDiagramIds.has(diagram.id)) {
+      continue;
+    }
+
+    nextCheckpointNumber += 1;
+    checkpointsToAdd.push({
+      diagramId: diagram.id,
+      checkpointNumber: nextCheckpointNumber,
+      type: "migration",
+      data: structuredClone(diagram.data),
+      createdAt: now,
+      triggerReason: "checkpoint-migration-baseline",
+    });
+  }
+
+  await db.transaction("rw", db.checkpoints, db.appState, async () => {
+    if (checkpointsToAdd.length > 0) {
+      await db.checkpoints.bulkAdd(checkpointsToAdd);
+    }
+
+    await db.appState.put({
+      key: CHECKPOINT_GLOBAL_COUNTER_KEY,
+      value: nextCheckpointNumber,
+    });
+    await db.appState.put({
+      key: CHECKPOINT_MIGRATION_VERSION_KEY,
+      value: migrationVersion,
+    });
+    await db.appState.put({
+      key: CHECKPOINT_MIGRATION_STATUS_KEY,
+      value: "completed",
+    });
+  });
+
+  return { migratedCount: checkpointsToAdd.length, skipped: false };
+}
+
+async function getNextCheckpointNumber(): Promise<number> {
+  const globalCounterState = await db.appState.get(
+    CHECKPOINT_GLOBAL_COUNTER_KEY,
+  );
+  const nextNumber =
+    typeof globalCounterState?.value === "number"
+      ? globalCounterState.value + 1
+      : 1;
+  await db.appState.put({
+    key: CHECKPOINT_GLOBAL_COUNTER_KEY,
+    value: nextNumber,
+  });
+  return nextNumber;
+}
+
+async function pruneCheckpointsForDiagram(
+  diagramId: number,
+  retentionHours: number,
+  maxCountPerDiagram: number,
+): Promise<void> {
+  const checkpoints = await db.checkpoints
+    .where("diagramId")
+    .equals(diagramId)
+    .toArray();
+  if (checkpoints.length === 0) {
+    return;
+  }
+
+  const now = Date.now();
+  const retentionMs = Math.max(1, retentionHours) * 60 * 60 * 1000;
+  const byNewest = [...checkpoints].sort((a, b) => {
+    const aTime = new Date(a.createdAt).getTime();
+    const bTime = new Date(b.createdAt).getTime();
+    return bTime - aTime;
+  });
+
+  const keepIds = new Set<number>();
+  for (const checkpoint of byNewest) {
+    if (!checkpoint.id) {
+      continue;
+    }
+    const checkpointTime = new Date(checkpoint.createdAt).getTime();
+    const withinRetention = now - checkpointTime <= retentionMs;
+    if (withinRetention && keepIds.size < maxCountPerDiagram) {
+      keepIds.add(checkpoint.id);
+    }
+  }
+
+  const idsToDelete = byNewest
+    .map((checkpoint) => checkpoint.id)
+    .filter((id): id is number => typeof id === "number" && !keepIds.has(id));
+
+  if (idsToDelete.length > 0) {
+    await db.checkpoints.bulkDelete(idsToDelete);
+  }
+}
+
+async function maybeCreateAutomaticCheckpoint(state: {
+  diagrams: Diagram[];
+  selectedDiagramId: number | null;
+  settings: Settings;
+}): Promise<void> {
+  const selectedId = state.selectedDiagramId;
+  if (!selectedId || !state.settings.checkpoints.enabled) {
+    return;
+  }
+
+  const migrationStatus = await db.appState.get(
+    CHECKPOINT_MIGRATION_STATUS_KEY,
+  );
+  if (migrationStatus?.value !== "completed") {
+    return;
+  }
+
+  const diagram = state.diagrams.find((d) => d.id === selectedId);
+  if (!diagram || !diagram.id) {
+    return;
+  }
+
+  let stats = checkpointStatsByDiagramId.get(diagram.id);
+  if (!stats) {
+    const existingCheckpoints = await db.checkpoints
+      .where("diagramId")
+      .equals(diagram.id)
+      .toArray();
+    const latestCheckpointTime = existingCheckpoints.reduce<number>(
+      (latest, checkpoint) => {
+        const checkpointTime = new Date(checkpoint.createdAt).getTime();
+        return checkpointTime > latest ? checkpointTime : latest;
+      },
+      0,
+    );
+    stats = {
+      meaningfulChanges: 0,
+      lastCheckpointAt: latestCheckpointTime || Date.now(),
+    };
+  }
+
+  const now = Date.now();
+  const intervalMs =
+    Math.max(1, state.settings.checkpoints.intervalMinutes) * 60 * 1000;
+  const hasReachedInterval = now - stats.lastCheckpointAt >= intervalMs;
+
+  if (!hasReachedInterval) {
+    checkpointStatsByDiagramId.set(diagram.id, stats);
+    return;
+  }
+
+  const checkpointNumber = await getNextCheckpointNumber();
+  const checkpoint: DiagramCheckpoint = {
+    diagramId: diagram.id,
+    checkpointNumber,
+    type: "automatic",
+    data: structuredClone(diagram.data),
+    createdAt: new Date(),
+    triggerReason: "interval-threshold",
+  };
+
+  await db.checkpoints.add(checkpoint);
+  await pruneCheckpointsForDiagram(
+    diagram.id,
+    state.settings.checkpoints.retentionHours,
+    state.settings.checkpoints.maxCountPerDiagram,
+  );
+
+  checkpointStatsByDiagramId.set(diagram.id, {
+    meaningfulChanges: 0,
+    lastCheckpointAt: now,
+  });
+}
+
+export const useStore = create<StoreState>()(
+  subscribeWithSelector<StoreState>((set, get) => ({
     diagrams: [],
     diagramsMap: new Map(),
     selectedDiagramId: null,
@@ -435,7 +693,15 @@ export const useStore = create(
       if (settingsState && typeof settingsState.value === "string") {
         try {
           const parsed = JSON.parse(settingsState.value);
-          settings = { ...DEFAULT_SETTINGS, ...parsed } as Settings;
+          settings = {
+            ...DEFAULT_SETTINGS,
+            ...parsed,
+            checkpoints: {
+              ...DEFAULT_SETTINGS.checkpoints,
+              ...(parsed?.checkpoints || {}),
+            },
+          } as Settings;
+          settings = sanitizeCheckpointSettings(settings);
         } catch (e) {
           console.error("Failed to parse settings:", e);
         }
@@ -472,16 +738,24 @@ export const useStore = create(
     setLastCursorPosition: (position) => set({ lastCursorPosition: position }),
     updateSettings: (newSettings) => {
       set((state) => {
-        const updatedSettings = { ...state.settings, ...newSettings };
+        const updatedSettings = {
+          ...state.settings,
+          ...newSettings,
+          checkpoints: {
+            ...state.settings.checkpoints,
+            ...(newSettings.checkpoints || {}),
+          },
+        };
+        const normalizedSettings = sanitizeCheckpointSettings(updatedSettings);
         db.appState
           .put({
             key: "settings",
-            value: JSON.stringify(updatedSettings),
+            value: JSON.stringify(normalizedSettings),
           })
           .catch((error) => {
             console.error("Failed to save settings:", error);
           });
-        return { settings: updatedSettings };
+        return { settings: normalizedSettings };
       });
     },
     createDiagram: async (diagramData) => {
@@ -1219,16 +1493,135 @@ export const useStore = create(
         );
       });
     },
+    createCheckpoint: async (type = "manual", triggerReason, label) => {
+      const { selectedDiagramId, diagramsMap, settings } = get();
+      if (!selectedDiagramId) {
+        return null;
+      }
+
+      const diagram = diagramsMap.get(selectedDiagramId);
+      if (!diagram || !diagram.id) {
+        return null;
+      }
+
+      const checkpointNumber = await getNextCheckpointNumber();
+      const trimmedLabel = label?.trim();
+      const checkpoint: DiagramCheckpoint = {
+        diagramId: diagram.id,
+        checkpointNumber,
+        type,
+        data: structuredClone(diagram.data),
+        createdAt: new Date(),
+        ...(trimmedLabel ? { label: trimmedLabel } : {}),
+        ...(triggerReason ? { triggerReason } : {}),
+      };
+
+      const id = await db.checkpoints.add(checkpoint);
+      await pruneCheckpointsForDiagram(
+        diagram.id,
+        settings.checkpoints.retentionHours,
+        settings.checkpoints.maxCountPerDiagram,
+      );
+      checkpointStatsByDiagramId.set(diagram.id, {
+        meaningfulChanges: 0,
+        lastCheckpointAt: Date.now(),
+      });
+
+      return { ...checkpoint, id };
+    },
+    listCheckpoints: async (
+      diagramId?: number,
+    ): Promise<DiagramCheckpoint[]> => {
+      const selectedId = diagramId ?? get().selectedDiagramId;
+      if (!selectedId) {
+        return [];
+      }
+      const checkpoints = await db.checkpoints
+        .where("diagramId")
+        .equals(selectedId)
+        .toArray();
+      return checkpoints.sort(
+        (a, b) => b.checkpointNumber - a.checkpointNumber,
+      );
+    },
+    restoreCheckpoint: async (checkpointId) => {
+      const checkpoint = await db.checkpoints.get(checkpointId);
+      if (!checkpoint) {
+        return false;
+      }
+
+      await db.transaction("rw", db.diagrams, async () => {
+        await db.diagrams
+          .where("id")
+          .equals(checkpoint.diagramId)
+          .modify((diagram) => {
+            diagram.data = structuredClone(checkpoint.data);
+            diagram.updatedAt = new Date();
+          });
+      });
+
+      set((state) => {
+        const updatedDiagrams = state.diagrams.map((diagram) =>
+          diagram.id === checkpoint.diagramId
+            ? {
+                ...diagram,
+                data: structuredClone(checkpoint.data),
+                updatedAt: new Date(),
+              }
+            : diagram,
+        );
+        return {
+          diagrams: updatedDiagrams,
+          diagramsMap: createDiagramsMap(updatedDiagrams),
+          selectedDiagramId: checkpoint.diagramId,
+        };
+      });
+
+      return true;
+    },
+    runCheckpointMigration: async () => {
+      try {
+        return await runCheckpointMigrationInDb();
+      } catch (error) {
+        await db.appState.put({
+          key: CHECKPOINT_MIGRATION_STATUS_KEY,
+          value: "failed",
+        });
+        throw error;
+      }
+    },
+    runAutomaticCheckpointTick: async () => {
+      const { diagrams, selectedDiagramId, settings, isLoading } = get();
+      if (isLoading) {
+        return;
+      }
+
+      try {
+        await maybeCreateAutomaticCheckpoint({
+          diagrams,
+          selectedDiagramId,
+          settings,
+        });
+      } catch (error) {
+        console.error("Failed automatic checkpoint capture:", error);
+      }
+    },
   })),
 );
 
 useStore.subscribe(
-  (state) => ({
+  (state: StoreState) => ({
     diagrams: state.diagrams,
     selectedDiagramId: state.selectedDiagramId,
     isLoading: state.isLoading,
+    settings: state.settings,
   }),
-  (state) => {
+  (
+    state: Pick<
+      StoreState,
+      "diagrams" | "selectedDiagramId" | "isLoading" | "settings"
+    >,
+  ) => {
     if (!state.isLoading) {
       debouncedSave(state.diagrams, state.selectedDiagramId);
     }

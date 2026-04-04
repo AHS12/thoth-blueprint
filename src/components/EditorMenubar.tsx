@@ -1,3 +1,6 @@
+import { CheckpointHistoryDialog } from "@/components/CheckpointHistoryDialog";
+import { CheckpointSettingsDialog } from "@/components/CheckpointSettingsDialog";
+import { ManualCheckpointDialog } from "@/components/ManualCheckpointDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,10 +28,15 @@ import {
 import { usePWA } from "@/hooks/usePWA";
 import { exportDbToJson } from "@/lib/backup";
 import { CtrlKey, KeyboardShortcuts } from "@/lib/constants";
+import { type DiagramCheckpoint } from "@/lib/types";
 import { useStore, type StoreState } from "@/store/store";
+import { showError, showSuccess } from "@/utils/toast";
 import { useTheme } from "next-themes";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+
+const CHECKPOINT_MIGRATION_ACK_VERSION_KEY = "checkpointMigrationAcknowledgedVersion";
+const CHECKPOINT_MIGRATION_PREFERENCE_KEY = "checkpointMigrationPreference";
 
 interface EditorMenubarProps {
   onAddTable: () => void;
@@ -72,6 +80,10 @@ export default function EditorMenubar({
     settings,
     updateSettings,
     setIsRelationshipDialogOpen,
+    createCheckpoint,
+    listCheckpoints,
+    restoreCheckpoint,
+    runCheckpointMigration,
   } = useStore(
     useShallow((state: StoreState) => ({
       moveDiagramToTrash: state.moveDiagramToTrash,
@@ -80,11 +92,41 @@ export default function EditorMenubar({
       settings: state.settings,
       updateSettings: state.updateSettings,
       setIsRelationshipDialogOpen: state.setIsRelationshipDialogOpen,
+      createCheckpoint: state.createCheckpoint,
+      listCheckpoints: state.listCheckpoints,
+      restoreCheckpoint: state.restoreCheckpoint,
+      runCheckpointMigration: state.runCheckpointMigration,
     }))
   );
 
   const { setTheme } = useTheme();
   const { isInstalled } = usePWA();
+  const [isCheckpointHistoryOpen, setIsCheckpointHistoryOpen] = useState(false);
+  const [isCheckpointSettingsOpen, setIsCheckpointSettingsOpen] = useState(false);
+  const [isManualCheckpointOpen, setIsManualCheckpointOpen] = useState(false);
+  const [isEnablingCheckpointMigration, setIsEnablingCheckpointMigration] = useState(false);
+  const [isCheckpointMigrationEnabled, setIsCheckpointMigrationEnabled] = useState(
+    () => localStorage.getItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY) === "enabled",
+  );
+  const [checkpoints, setCheckpoints] = useState<DiagramCheckpoint[]>([]);
+
+  useEffect(() => {
+    const refreshMigrationEnabledState = () => {
+      setIsCheckpointMigrationEnabled(
+        localStorage.getItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY) === "enabled",
+      );
+    };
+
+    window.addEventListener("storage", refreshMigrationEnabledState);
+    window.addEventListener("focus", refreshMigrationEnabledState);
+    document.addEventListener("visibilitychange", refreshMigrationEnabledState);
+
+    return () => {
+      window.removeEventListener("storage", refreshMigrationEnabledState);
+      window.removeEventListener("focus", refreshMigrationEnabledState);
+      document.removeEventListener("visibilitychange", refreshMigrationEnabledState);
+    };
+  }, []);
 
   if (!diagram) return null;
   const isLocked = diagram.data.isLocked ?? false;
@@ -100,6 +142,73 @@ export default function EditorMenubar({
     setSelectedDiagramId(null);
   };
 
+  const refreshCheckpoints = async () => {
+    const list = await listCheckpoints(diagram.id);
+    setCheckpoints(list);
+  };
+
+  const handleCreateManualCheckpoint = async (label?: string) => {
+    try {
+      const checkpoint = await createCheckpoint("manual", "manual-user-action", label);
+      if (checkpoint) {
+        showSuccess(`Created checkpoint #${checkpoint.checkpointNumber}.`);
+        setIsManualCheckpointOpen(false);
+      }
+    } catch (error) {
+      console.error("Failed to create manual checkpoint:", error);
+      showError("Failed to create checkpoint.");
+    }
+  };
+
+  const handleRestoreCheckpoint = async (checkpointId: number) => {
+    try {
+      const restored = await restoreCheckpoint(checkpointId);
+      if (restored) {
+        showSuccess("Checkpoint restored successfully.");
+        setIsCheckpointHistoryOpen(false);
+      }
+    } catch (error) {
+      console.error("Failed to restore checkpoint:", error);
+      showError("Failed to restore checkpoint.");
+    }
+  };
+
+  const handleEnableCheckpointMigrationNow = async () => {
+    if (isCheckpointMigrationEnabled || isEnablingCheckpointMigration) {
+      return;
+    }
+
+    setIsEnablingCheckpointMigration(true);
+    try {
+      // Keep the menu action consistent with the modal flow.
+      exportDbToJson();
+
+      const result = await runCheckpointMigration();
+      const currentVersion =
+        typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
+      localStorage.setItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY, "enabled");
+      localStorage.setItem(CHECKPOINT_MIGRATION_ACK_VERSION_KEY, currentVersion);
+      setIsCheckpointMigrationEnabled(true);
+      if (!result.skipped) {
+        showSuccess(`Checkpoint migration completed (${result.migratedCount} created).`);
+      }
+    } catch (error) {
+      console.error("Failed to enable checkpoint migration:", error);
+      showError("Could not enable checkpoint migration.");
+    } finally {
+      setIsEnablingCheckpointMigration(false);
+    }
+  };
+
+  const updateCheckpointSettings = (overrides: Partial<typeof settings.checkpoints>) => {
+    updateSettings({
+      checkpoints: {
+        ...settings.checkpoints,
+        ...overrides,
+      },
+    });
+  };
+
   return (
     <Menubar className="rounded-none border-none bg-transparent">
       <MenubarMenu>
@@ -111,6 +220,16 @@ export default function EditorMenubar({
           <MenubarSeparator />
           <MenubarItem onClick={onExport}>Export Diagram</MenubarItem>
           <MenubarItem onClick={exportDbToJson}>Save Data</MenubarItem>
+          <MenubarSeparator />
+          <MenubarItem onClick={() => setIsManualCheckpointOpen(true)}>Create Checkpoint</MenubarItem>
+          <MenubarItem
+            onClick={async () => {
+              await refreshCheckpoints();
+              setIsCheckpointHistoryOpen(true);
+            }}
+          >
+            View Checkpoints
+          </MenubarItem>
           <MenubarSeparator />
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -238,6 +357,26 @@ export default function EditorMenubar({
               Install App
             </MenubarItem>
           )}
+          <MenubarSeparator />
+          <MenubarCheckboxItem
+            checked={settings.checkpoints.enabled}
+            onCheckedChange={(checked) => updateCheckpointSettings({ enabled: checked })}
+          >
+            Enable Automatic Checkpoints
+          </MenubarCheckboxItem>
+          <MenubarItem onClick={() => setIsCheckpointSettingsOpen(true)}>
+            Checkpoint Settings
+          </MenubarItem>
+          {!isCheckpointMigrationEnabled && (
+            <MenubarItem
+              onClick={handleEnableCheckpointMigrationNow}
+              disabled={isEnablingCheckpointMigration}
+            >
+              {isEnablingCheckpointMigration
+                ? "Enabling Checkpoints..."
+                : "Enable Checkpoints Now"}
+            </MenubarItem>
+          )}
         </MenubarContent>
       </MenubarMenu>
       <MenubarMenu>
@@ -251,6 +390,27 @@ export default function EditorMenubar({
           </MenubarItem>
         </MenubarContent>
       </MenubarMenu>
+      <CheckpointHistoryDialog
+        isOpen={isCheckpointHistoryOpen}
+        onOpenChange={setIsCheckpointHistoryOpen}
+        checkpoints={checkpoints}
+        onRestore={handleRestoreCheckpoint}
+        onCreateCheckpoint={() => {
+          setIsCheckpointHistoryOpen(false);
+          setIsManualCheckpointOpen(true);
+        }}
+      />
+      <CheckpointSettingsDialog
+        isOpen={isCheckpointSettingsOpen}
+        onOpenChange={setIsCheckpointSettingsOpen}
+        settings={settings.checkpoints}
+        onSave={(nextSettings) => updateSettings({ checkpoints: nextSettings })}
+      />
+      <ManualCheckpointDialog
+        isOpen={isManualCheckpointOpen}
+        onOpenChange={setIsManualCheckpointOpen}
+        onCreate={handleCreateManualCheckpoint}
+      />
     </Menubar>
   );
 }

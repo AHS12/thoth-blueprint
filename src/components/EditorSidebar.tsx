@@ -1,9 +1,12 @@
 import { dbTypeDisplay } from "@/lib/db-types";
+import { type DiagramCheckpoint } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store/store";
+import { showError, showSuccess } from "@/utils/toast";
 import { formatDistanceToNow } from "date-fns";
-import { GitCommitHorizontal, Plus, Table } from "lucide-react";
+import { GitCommitHorizontal, History, Plus, Table } from "lucide-react";
 import React, { useMemo, useState } from "react";
+import { CheckpointHistoryDialog } from "./CheckpointHistoryDialog";
 import EditorMenubar from "./EditorMenubar";
 import { DatabaseTypeIcon } from "./icons/DatabaseTypeIcon";
 import RelationshipsTab from "./RelationshipsTab";
@@ -43,6 +46,9 @@ export default function EditorSidebar({
   const diagramsMap = useStore((state) => state.diagramsMap);
   const selectedNodeId = useStore((state) => state.selectedNodeId);
   const selectedEdgeId = useStore((state) => state.selectedEdgeId);
+  const listCheckpoints = useStore((state) => state.listCheckpoints);
+  const restoreCheckpoint = useStore((state) => state.restoreCheckpoint);
+  const createCheckpoint = useStore((state) => state.createCheckpoint);
 
   const diagram = useMemo(() =>
     diagramsMap.get(selectedDiagramId || 0),
@@ -55,6 +61,8 @@ export default function EditorSidebar({
     if (selectedNodeId) return "tables";
     return "tables";
   });
+  const [isCheckpointHistoryOpen, setIsCheckpointHistoryOpen] = useState(false);
+  const [checkpoints, setCheckpoints] = useState<DiagramCheckpoint[]>([]);
 
   const nodes = useMemo(
     () =>
@@ -69,6 +77,51 @@ export default function EditorSidebar({
   const edges = useMemo(() => diagram?.data.edges ?? [], [diagram?.data.edges]);
   const isLocked = useMemo(() => diagram?.data.isLocked ?? false, [diagram?.data.isLocked]);
 
+  const refreshCheckpoints = React.useCallback(async () => {
+    if (!diagram?.id) {
+      setCheckpoints([]);
+      return;
+    }
+
+    try {
+      const list = await listCheckpoints(diagram.id);
+      setCheckpoints(list);
+    } catch (error) {
+      console.error("Failed to load checkpoints:", error);
+    }
+  }, [diagram?.id, listCheckpoints]);
+
+  const openCheckpointBrowser = React.useCallback(async () => {
+    await refreshCheckpoints();
+    setIsCheckpointHistoryOpen(true);
+  }, [refreshCheckpoints]);
+
+  const handleRestoreCheckpoint = React.useCallback(async (checkpointId: number) => {
+    try {
+      const restored = await restoreCheckpoint(checkpointId);
+      if (restored) {
+        showSuccess("Checkpoint restored successfully.");
+        setIsCheckpointHistoryOpen(false);
+      }
+    } catch (error) {
+      console.error("Failed to restore checkpoint:", error);
+      showError("Failed to restore checkpoint.");
+    }
+  }, [restoreCheckpoint]);
+
+  const handleCreateCheckpointFromHistory = React.useCallback(async () => {
+    try {
+      const checkpoint = await createCheckpoint("manual", "manual-user-action");
+      if (checkpoint) {
+        showSuccess(`Created checkpoint #${checkpoint.checkpointNumber}.`);
+        await refreshCheckpoints();
+      }
+    } catch (error) {
+      console.error("Failed to create checkpoint:", error);
+      showError("Failed to create checkpoint.");
+    }
+  }, [createCheckpoint, refreshCheckpoints]);
+
   // Auto-switch tabs based on selection
   const handleTabChange = (value: string) => {
     setCurrentTab(value);
@@ -82,6 +135,17 @@ export default function EditorSidebar({
       setCurrentTab("tables");
     }
   }, [selectedNodeId, selectedEdgeId, nodes, edges]);
+
+  React.useEffect(() => {
+    void refreshCheckpoints();
+    const intervalId = window.setInterval(() => {
+      void refreshCheckpoints();
+    }, 30_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [refreshCheckpoints]);
 
   if (!diagram) return null;
 
@@ -128,6 +192,13 @@ export default function EditorSidebar({
         <div className="mt-2 px-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] sm:text-xs text-muted-foreground">
           <span className="flex items-center whitespace-nowrap"><Table className="h-3 w-3 mr-1" /> {nodes.length} tables</span>
           <span className="flex items-center whitespace-nowrap"><GitCommitHorizontal className="h-3 w-3 mr-1" /> {edges.length} relationships</span>
+          <button
+            type="button"
+            onClick={openCheckpointBrowser}
+            className="flex items-center whitespace-nowrap hover:text-foreground transition-colors"
+          >
+            <History className="h-3 w-3 mr-1" /> {checkpoints.length} checkpoints
+          </button>
           <span className="hidden sm:inline whitespace-nowrap">Updated {formatDistanceToNow(new Date(diagram.updatedAt), { addSuffix: true })}</span>
         </div>
       </div>
@@ -197,6 +268,13 @@ export default function EditorSidebar({
           />
         )}
       </div>
+      <CheckpointHistoryDialog
+        isOpen={isCheckpointHistoryOpen}
+        onOpenChange={setIsCheckpointHistoryOpen}
+        checkpoints={checkpoints}
+        onRestore={handleRestoreCheckpoint}
+        onCreateCheckpoint={handleCreateCheckpointFromHistory}
+      />
     </div>
   );
 }
