@@ -9,7 +9,7 @@ import { colors, DbRelationship, relationshipTypes } from "@/lib/constants";
 import { type AppEdge, type AppNode, type AppNoteNode, type AppZoneNode, type CombinedNode, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
 import { DEFAULT_NODE_SPACING, DEFAULT_TABLE_HEIGHT, DEFAULT_TABLE_WIDTH, findExistingRelationship, findNonOverlappingPosition, getCanvasDimensions, getColumnId, isNodeInLockedZone, isNodeInsideZone } from "@/lib/utils";
 import { useStore, type StoreState } from "@/store/store";
-import { showError } from "@/utils/toast";
+import { showError, showSuccess } from "@/utils/toast";
 import {
   Background,
   ControlButton,
@@ -74,6 +74,7 @@ const DiagramEditor = forwardRef(
       addNode,
       undoDelete,
       batchUpdateNodes,
+      copyNodes,
       selectedNodeId,
       setSelectedNodeId,
       selectedEdgeId,
@@ -97,6 +98,7 @@ const DiagramEditor = forwardRef(
         addNode: state.addNode,
         undoDelete: state.undoDelete,
         batchUpdateNodes: state.batchUpdateNodes,
+        copyNodes: state.copyNodes,
         selectedNodeId: state.selectedNodeId,
         setSelectedNodeId: state.setSelectedNodeId,
         selectedEdgeId: state.selectedEdgeId,
@@ -136,6 +138,17 @@ const DiagramEditor = forwardRef(
     const handleTableDelete = useCallback((ids: string[]) => {
       deleteNodes(ids);
     }, [deleteNodes]);
+
+    const handleTableCopy = useCallback((ids: string[]) => {
+      const nodesToCopy = ids
+        .map((id) => nodesMap.get(id))
+        .filter((node): node is AppNode => Boolean(node) && !node?.data.isDeleted);
+
+      if (nodesToCopy.length === 0) return;
+
+      copyNodes(nodesToCopy);
+      showSuccess(`${nodesToCopy.length} item(s) copied to clipboard.`);
+    }, [nodesMap, copyNodes]);
 
     const handleNoteUpdate = useCallback((id: string, data: Partial<import('@/lib/types').NoteNodeData>) => {
       const note = notesMap.get(id);
@@ -215,6 +228,7 @@ const DiagramEditor = forwardRef(
         <TableNode
           {...props}
           onDelete={handleTableDelete}
+          onCopy={handleTableCopy}
         />
       ),
       note: (props: NodeProps<AppNoteNode>) => (
@@ -233,7 +247,7 @@ const DiagramEditor = forwardRef(
           onCreateNoteAtPosition={onCreateNoteAtPosition}
         />
       ),
-    }), [handleTableDelete, handleNoteUpdate, handleNoteDelete, handleZoneUpdate, handleZoneDelete, onCreateTableAtPosition, onCreateNoteAtPosition]);
+    }), [handleTableDelete, handleTableCopy, handleNoteUpdate, handleNoteDelete, handleZoneUpdate, handleZoneDelete, onCreateTableAtPosition, onCreateNoteAtPosition]);
 
     useEffect(() => {
       if (selectedNodeId && rfInstanceRef.current && settings.focusTableDuringSelection) {
@@ -550,6 +564,14 @@ const DiagramEditor = forwardRef(
 
     return (
       <div className="w-full h-full" ref={reactFlowWrapper}>
+        {(clipboard?.length || 0) > 0 && (
+          <div className="absolute right-4 top-4 z-[11] pointer-events-none">
+            <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 text-xs shadow-md">
+              <Clipboard className="h-3.5 w-3.5" />
+              <span>{clipboard?.length || 0} copied</span>
+            </div>
+          </div>
+        )}
         <ContextMenu>
           <ContextMenuTrigger>
             <ReactFlow

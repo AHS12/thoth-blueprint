@@ -51,7 +51,7 @@ export function WhatsNewDialog({ isOpen, onOpenChange, markdown = "", onReload, 
                   onStartTour();
                 }}
               >
-                Take Feature Tour
+                Take Tour
               </Button>
             )}
             {onReload ? (

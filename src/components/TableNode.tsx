@@ -16,15 +16,15 @@ import {
 import { colors } from "@/lib/constants";
 import { type TableNodeData } from "@/lib/types";
 import { useStore } from "@/store/store";
-import { useShallow } from "zustand/react/shallow";
 import {
   Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,
 } from "@xyflow/react";
-import { Key, MoreHorizontal, Trash2 } from "lucide-react";
+import { Copy, Key, MoreHorizontal, Trash2 } from "lucide-react";
 import React, { useEffect, useMemo, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Button } from "./ui/button";
 import {
   PopoverWithArrow,
@@ -35,6 +35,7 @@ import {
 interface TableNodeProps extends NodeProps {
   data: TableNodeData;
   onDelete?: (ids: string[]) => void;
+  onCopy?: (ids: string[]) => void;
 }
 
 function TableNode({
@@ -42,6 +43,7 @@ function TableNode({
   data,
   selected,
   onDelete,
+  onCopy,
 }: TableNodeProps) {
   const updateNodeInternals = useUpdateNodeInternals();
   const prevColumnsRef = useRef(data.columns);
@@ -61,7 +63,7 @@ function TableNode({
   const sourceColId = sourceHandleParts.length > 2 ? sourceHandleParts.slice(0, -2).join("-") : "";
   const targetColId = targetHandleParts.length > 2 ? targetHandleParts.slice(0, -2).join("-") : "";
 
-  
+
 
   // Create a Map for O(1) column lookups
   const columnsMap = useMemo(() => {
@@ -302,6 +304,9 @@ function TableNode({
         </Card>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        <ContextMenuItem onSelect={() => onCopy?.([id])}>
+          <Copy className="h-4 w-4 mr-2" /> Copy Table
+        </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => onDelete?.([id])}
           className="text-destructive focus:text-destructive"

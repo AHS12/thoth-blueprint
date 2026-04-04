@@ -7,7 +7,7 @@ import { DEFAULT_NODE_SPACING, DEFAULT_TABLE_HEIGHT, DEFAULT_TABLE_WIDTH, findEx
 import { useStore, type StoreState } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { type ReactFlowInstance } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { AboutDialog } from "./AboutDialog";
 import { AddElementDialog } from "./AddElementDialog";
@@ -94,9 +94,12 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
   const [isHelpCenterOpen, setIsHelpCenterOpen] = useState(false);
   const [isAddElementDialogOpen, setIsAddElementDialogOpen] = useState(false);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+  const [isWhatsNewPendingAfterTour, setIsWhatsNewPendingAfterTour] = useState(false);
+  const [whatsNewPendingTourMode, setWhatsNewPendingTourMode] = useState<"gallery" | "editor" | null>(null);
   const [isProductTourOpen, setIsProductTourOpen] = useState(false);
   const [tourMode, setTourMode] = useState<"gallery" | "editor">("gallery");
   const [whatsNewMarkdown, setWhatsNewMarkdown] = useState<string>("");
+  const hasCheckedWhatsNewRef = useRef(false);
 
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance<ProcessedNode, ProcessedEdge> | null>(null);
 
@@ -169,22 +172,51 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
 
   // Auto-show What's New when app version changes and fetch local markdown
   useEffect(() => {
+    if (hasCheckedWhatsNewRef.current) return;
+    hasCheckedWhatsNewRef.current = true;
+
     const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
     const lastSeenVersion = localStorage.getItem('whatsNewSeenVersion');
+    const pendingMode = currentTourMode;
+    const hasOpenedGuidedExperienceForMode = localStorage.getItem(getGuidedExperienceOpenedKey(pendingMode)) === "true";
+    const shouldQueueForGuidedExperience = !hasOpenedGuidedExperienceForMode;
+
     if (currentVersion && currentVersion !== lastSeenVersion) {
       fetch('/whats-new.md')
         .then((res) => res.ok ? res.text() : Promise.reject(new Error('Failed to load whats-new.md')))
         .then((text) => {
           setWhatsNewMarkdown(text);
-          setIsWhatsNewOpen(true);
+          if (shouldQueueForGuidedExperience) {
+            setIsWhatsNewPendingAfterTour(true);
+            setWhatsNewPendingTourMode(pendingMode);
+          } else {
+            setIsWhatsNewOpen(true);
+          }
         })
         .catch((err) => {
           console.error('Error loading whats-new.md', err);
           setWhatsNewMarkdown('# What\'s New\n\nUpdate available.');
-          setIsWhatsNewOpen(true);
+          if (shouldQueueForGuidedExperience) {
+            setIsWhatsNewPendingAfterTour(true);
+            setWhatsNewPendingTourMode(pendingMode);
+          } else {
+            setIsWhatsNewOpen(true);
+          }
         });
     }
-  }, []);
+  }, [currentTourMode]);
+
+  useEffect(() => {
+    if (!isWhatsNewPendingAfterTour || !whatsNewPendingTourMode) return;
+
+    const tourWasOpenedForPendingMode = localStorage.getItem(getGuidedExperienceOpenedKey(whatsNewPendingTourMode)) === "true";
+
+    if (!isProductTourOpen && tourWasOpenedForPendingMode) {
+      setIsWhatsNewOpen(true);
+      setIsWhatsNewPendingAfterTour(false);
+      setWhatsNewPendingTourMode(null);
+    }
+  }, [isProductTourOpen, isWhatsNewPendingAfterTour, whatsNewPendingTourMode]);
 
   // Manual open handler to view What's New on demand
   const openWhatsNew = () => {
