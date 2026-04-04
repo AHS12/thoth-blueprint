@@ -184,6 +184,7 @@ export default function EditorMenubar({
       exportDbToJson();
 
       const result = await runCheckpointMigration();
+      updateCheckpointSettings({ enabled: true });
       const currentVersion =
         typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
       localStorage.setItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY, "enabled");

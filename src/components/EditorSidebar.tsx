@@ -195,6 +195,7 @@ export default function EditorSidebar({
           <button
             type="button"
             onClick={openCheckpointBrowser}
+            data-tour="editor-checkpoint-history"
             className="flex items-center whitespace-nowrap hover:text-foreground transition-colors"
           >
             <History className="h-3 w-3 mr-1" /> {checkpoints.length} checkpoints

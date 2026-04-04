@@ -76,6 +76,8 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
     setIsAddRelationshipDialogOpen,
     runCheckpointMigration,
     runAutomaticCheckpointTick,
+    settings,
+    updateSettings,
   } = useStore(
     useShallow((state: StoreState) => ({
       addNode: state.addNode,
@@ -87,6 +89,8 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       setIsAddRelationshipDialogOpen: state.setIsRelationshipDialogOpen,
       runCheckpointMigration: state.runCheckpointMigration,
       runAutomaticCheckpointTick: state.runAutomaticCheckpointTick,
+      settings: state.settings,
+      updateSettings: state.updateSettings,
     }))
   );
 
@@ -181,6 +185,13 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       description: "Reorganize can clean up complex layouts while preserving relationship clarity.",
       target: '[data-tour="editor-control-reorganize"]',
       placement: "left",
+    },
+    {
+      id: "editor-checkpoint-history",
+      title: "Checkpoint History",
+      description: "Use the checkpoint count to quickly open history, preview snapshots, and restore safely.",
+      target: '[data-tour="editor-checkpoint-history"]',
+      placement: "bottom",
     },
   ], []);
 
@@ -281,6 +292,12 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       exportDbToJson();
 
       const result = await runCheckpointMigration();
+      updateSettings({
+        checkpoints: {
+          ...settings.checkpoints,
+          enabled: true,
+        },
+      });
       const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
       localStorage.setItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY, "enabled");
       localStorage.setItem(CHECKPOINT_MIGRATION_ACK_VERSION_KEY, currentVersion);
@@ -295,7 +312,7 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
     } finally {
       setIsCheckpointMigrationProcessing(false);
     }
-  }, [runCheckpointMigration]);
+  }, [runCheckpointMigration, settings.checkpoints, updateSettings]);
 
   const startProductTour = useCallback((markAsOpened = true) => {
     setTourMode(currentTourMode);
