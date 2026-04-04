@@ -23,7 +23,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { Copy, Key, MoreHorizontal, Trash2 } from "lucide-react";
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "./ui/button";
 import {
@@ -117,6 +117,7 @@ function TableNode({
   onDelete,
   onCopy,
 }: TableNodeProps) {
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
   const prevColumnsRef = useRef(data.columns);
   const selectedNodeId = useStore((state) => state.selectedNodeId);
@@ -174,6 +175,11 @@ function TableNode({
     return columnsMap.get(id)?.name || "unknown";
   };
 
+  const handleCopyFromPopover = () => {
+    onCopy?.([id]);
+    setIsPopoverOpen(false);
+  };
+
   return (
     <ContextMenu>
       <ContextMenuTrigger>
@@ -193,7 +199,7 @@ function TableNode({
             <CardTitle className="text-sm text-center font-semibold p-2">
               {data.label}
             </CardTitle>
-            <PopoverWithArrow>
+            <PopoverWithArrow open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
               <PopoverWithArrowTrigger asChild>
                 <Button
                   variant="ghost"
@@ -245,6 +251,14 @@ function TableNode({
                     </div>
                   )}
                   <Separator />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-auto py-1 px-2 text-xs"
+                    onClick={handleCopyFromPopover}
+                  >
+                    <Copy className="h-3 w-3 mr-1" /> Copy Table
+                  </Button>
                   <Button
                     variant="destructive"
                     size="sm"
