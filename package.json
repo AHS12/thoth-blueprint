@@ -2,7 +2,7 @@
   "name": "thothblueprint",
   "description": "Free visual database design tool with drag-and-move editing, multi-format export, and migration generation for popular frameworks.",
   "private": true,
-  "version": "0.0.8",
+  "version": "0.0.9",
   "type": "module",
   "scripts": {
     "dev": "vite",

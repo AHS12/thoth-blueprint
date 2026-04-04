@@ -1,3 +1,39 @@
+# What’s New in ThothBlueprint v0.0.9
+
+This release focuses on onboarding experience, in-app guidance, and editor responsiveness improvements for larger diagrams.
+
+## Highlights
+
+- **Guided Onboarding Tour:** Added a reusable product tour for both Gallery and Editor with contextual steps and spotlight guidance.
+- **Help Center:** Introduced a dedicated Help Center dialog with quick access to tour, shortcuts, and release notes.
+- **Performance Pass:** Improved editor responsiveness by reducing heavy comparisons and tightening update paths in critical interaction flows.
+
+## New & Improved
+
+- **Context-Aware Guided Experience:** Tour tracking is now stored per context (Gallery vs Editor), so each area can be introduced independently.
+- **Tour + What’s New Orchestration:** First-time flow now avoids overlap by sequencing guided experience and release notes more cleanly.
+- **Responsive Tour Layout:** Improved positioning and compact behavior for mobile/tablet to keep controls readable on smaller screens.
+- **Table Copy UX:** Added copy actions in table menus (including the 3-dot menu) with improved popover behavior after copy.
+- **Clipboard Indicator:** Added a visible copied-items indicator in the editor so paste readiness is always clear.
+- **Edge Interaction Reliability:** Improved edge selection handling so relationship interactions are more consistent.
+
+## Performance & Stability
+
+- Removed expensive deep stringification from hot React memo comparison paths in key editor components.
+- Optimized paste flow to use an atomic state update and improved node ID generation reliability.
+- Fixed store consistency by ensuring diagram map synchronization across diagram mutation actions.
+- Reduced callback/dependency churn in editor interaction handlers to avoid avoidable rerenders.
+
+## Bug Fixes
+
+- Fixed touch interaction regression where tables, notes, and zones could not be dragged/moved properly on mobile/tablet devices ([Issue #32](https://github.com/AHS12/thoth-blueprint/issues/32)).
+
+## Notes
+
+- This section reflects features delivered so far in `v0.0.9` and may be expanded before final release.
+
+---
+
 # What’s New in ThothBlueprint v0.0.8
 
 This release focuses on improving relationship lines, offering manual layout adjustments, and fixing issues with duplicate relationships in complex diagrams.
