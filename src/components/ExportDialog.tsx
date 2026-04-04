@@ -16,8 +16,8 @@ import { generateTypeOrmMigration } from "@/lib/codegen/typeorm/migration-genera
 import { exportToDbml, exportToJson, exportToSql } from "@/lib/exporter/sql-dbml-json-exporter";
 import { exportToMermaid } from "@/lib/mermaid";
 import { type Diagram, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
-import { useStore } from "@/store/store";
 import { cn, downloadZip } from "@/lib/utils";
+import { useStore } from "@/store/store";
 import { showError } from "@/utils/toast";
 import {
   ReactFlowInstance,
@@ -52,6 +52,7 @@ export function ExportDialog({
     if (!diagram || !selectedFormat) return;
 
     const settings = useStore.getState().settings;
+    await useStore.getState().runCheckpointMigration();
 
     const filename = `${diagram.name.replace(/\s+/g, "_")}.${selectedFormat === "sql"
       ? "sql"

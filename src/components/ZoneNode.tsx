@@ -178,11 +178,10 @@ const MemoizedZoneNode = React.memo(ZoneNode, (prevProps, nextProps) => {
     prevProps.id === nextProps.id &&
     prevProps.selected === nextProps.selected &&
     prevProps.data.name === nextProps.data.name &&
+    prevProps.data.color === nextProps.data.color &&
     prevProps.data.isLocked === nextProps.data.isLocked &&
-    // Compare position and dimensions if they exist
-    JSON.stringify(prevProps.data.position) === JSON.stringify(nextProps.data.position) &&
-    JSON.stringify(prevProps.data.width) === JSON.stringify(nextProps.data.width) &&
-    JSON.stringify(prevProps.data.height) === JSON.stringify(nextProps.data.height)
+    prevProps.width === nextProps.width &&
+    prevProps.height === nextProps.height
   );
 });
 

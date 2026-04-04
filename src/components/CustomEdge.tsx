@@ -7,8 +7,60 @@ import {
   getSmoothStepPath,
   useReactFlow,
 } from "@xyflow/react";
-import { useMemo, useCallback } from "react";
-import React from "react";
+import React, { useCallback, useMemo } from "react";
+
+function areStringArraysEqual(prev?: string[], next?: string[]) {
+  if (prev === next) return true;
+  if (!prev && !next) return true;
+  if (!prev || !next) return false;
+  if (prev.length !== next.length) return false;
+
+  for (let i = 0; i < prev.length; i++) {
+    if (prev[i] !== next[i]) return false;
+  }
+
+  return true;
+}
+
+function areEdgeDataEqual(prevData: unknown, nextData: unknown): boolean {
+  if (prevData === nextData) return true;
+
+  const prev = (prevData || {}) as EdgeData;
+  const next = (nextData || {}) as EdgeData;
+
+  return (
+    prev.relationship === next.relationship &&
+    prev.isHighlighted === next.isHighlighted &&
+    prev.isPositionLocked === next.isPositionLocked &&
+    prev.constraintName === next.constraintName &&
+    prev.centerX === next.centerX &&
+    prev.centerY === next.centerY &&
+    prev.isComposite === next.isComposite &&
+    areStringArraysEqual(prev.sourceColumns, next.sourceColumns) &&
+    areStringArraysEqual(prev.targetColumns, next.targetColumns)
+  );
+}
+
+function areStylesEqual(
+  prevStyle: EdgeProps["style"],
+  nextStyle: EdgeProps["style"]
+): boolean {
+  if (prevStyle === nextStyle) return true;
+  if (!prevStyle && !nextStyle) return true;
+  if (!prevStyle || !nextStyle) return false;
+
+  const prevKeys = Object.keys(prevStyle);
+  const nextKeys = Object.keys(nextStyle);
+  if (prevKeys.length !== nextKeys.length) return false;
+
+  for (const key of prevKeys) {
+    if (prevStyle[key as keyof typeof prevStyle] !== nextStyle[key as keyof typeof nextStyle]) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 const EdgeIndicator = ({
   x,
@@ -126,7 +178,7 @@ function CustomEdge(props: EdgeProps) {
   const onHandleMouseDown = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
-      
+
       const startX = event.clientX;
       const startY = event.clientY;
       const initialCenterX = edgeData?.centerX ?? labelX;
@@ -278,10 +330,8 @@ const MemoizedCustomEdge = React.memo(CustomEdge, (prevProps, nextProps) => {
     prevProps.sourcePosition === nextProps.sourcePosition &&
     prevProps.targetPosition === nextProps.targetPosition &&
     prevProps.selected === nextProps.selected &&
-    // Compare edge data
-    JSON.stringify(prevProps.data) === JSON.stringify(nextProps.data) &&
-    // Compare style
-    JSON.stringify(prevProps.style) === JSON.stringify(nextProps.style)
+    areEdgeDataEqual(prevProps.data, nextProps.data) &&
+    areStylesEqual(prevProps.style, nextProps.style)
   );
 });
 

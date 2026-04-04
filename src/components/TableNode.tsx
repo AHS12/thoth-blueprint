@@ -16,15 +16,15 @@ import {
 import { colors } from "@/lib/constants";
 import { type TableNodeData } from "@/lib/types";
 import { useStore } from "@/store/store";
-import { useShallow } from "zustand/react/shallow";
 import {
   Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,
 } from "@xyflow/react";
-import { Key, MoreHorizontal, Trash2 } from "lucide-react";
-import React, { useEffect, useMemo, useRef } from "react";
+import { Copy, Key, MoreHorizontal, Trash2 } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Button } from "./ui/button";
 import {
   PopoverWithArrow,
@@ -35,6 +35,79 @@ import {
 interface TableNodeProps extends NodeProps {
   data: TableNodeData;
   onDelete?: (ids: string[]) => void;
+  onCopy?: (ids: string[]) => void;
+}
+
+function areColumnsEqual(
+  prevColumns: TableNodeData["columns"],
+  nextColumns: TableNodeData["columns"]
+): boolean {
+  if (prevColumns === nextColumns) return true;
+  if (prevColumns.length !== nextColumns.length) return false;
+
+  for (let i = 0; i < prevColumns.length; i++) {
+    const prev = prevColumns[i];
+    const next = nextColumns[i];
+    if (!prev || !next) return false;
+
+    if (
+      prev.id !== next.id ||
+      prev.name !== next.name ||
+      prev.type !== next.type ||
+      prev.pk !== next.pk ||
+      prev.nullable !== next.nullable ||
+      prev.defaultValue !== next.defaultValue ||
+      prev.isUnique !== next.isUnique ||
+      prev.isAutoIncrement !== next.isAutoIncrement ||
+      prev.comment !== next.comment ||
+      prev.enumValues !== next.enumValues ||
+      prev.length !== next.length ||
+      prev.precision !== next.precision ||
+      prev.scale !== next.scale ||
+      prev.isUnsigned !== next.isUnsigned ||
+      prev.charset !== next.charset ||
+      prev.collation !== next.collation ||
+      prev.isGenerated !== next.isGenerated ||
+      prev.generatedExpression !== next.generatedExpression ||
+      prev.generatedType !== next.generatedType
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areIndicesEqual(
+  prevIndices: TableNodeData["indices"],
+  nextIndices: TableNodeData["indices"]
+): boolean {
+  if (prevIndices === nextIndices) return true;
+  if (!prevIndices && !nextIndices) return true;
+  if (!prevIndices || !nextIndices) return false;
+  if (prevIndices.length !== nextIndices.length) return false;
+
+  for (let i = 0; i < prevIndices.length; i++) {
+    const prev = prevIndices[i];
+    const next = nextIndices[i];
+    if (!prev || !next) return false;
+
+    if (
+      prev.id !== next.id ||
+      prev.name !== next.name ||
+      prev.isUnique !== next.isUnique ||
+      prev.type !== next.type
+    ) {
+      return false;
+    }
+
+    if (prev.columns.length !== next.columns.length) return false;
+    for (let j = 0; j < prev.columns.length; j++) {
+      if (prev.columns[j] !== next.columns[j]) return false;
+    }
+  }
+
+  return true;
 }
 
 function TableNode({
@@ -42,16 +115,23 @@ function TableNode({
   data,
   selected,
   onDelete,
+  onCopy,
 }: TableNodeProps) {
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
   const prevColumnsRef = useRef(data.columns);
   const selectedNodeId = useStore((state) => state.selectedNodeId);
   const isSelected = selected || selectedNodeId === id;
-  const { selectedEdgeId, edges } = useStore(
+  const { selectedEdgeId, selectedDiagramId, diagramsMap } = useStore(
     useShallow((state) => ({
       selectedEdgeId: state.selectedEdgeId,
-      edges: state.diagrams.find(d => d.id === state.selectedDiagramId)?.data.edges || [],
+      selectedDiagramId: state.selectedDiagramId,
+      diagramsMap: state.diagramsMap,
     }))
+  );
+  const edges = useMemo(
+    () => (selectedDiagramId === null ? [] : diagramsMap.get(selectedDiagramId)?.data.edges || []),
+    [selectedDiagramId, diagramsMap]
   );
   const selectedEdge = edges.find(e => e.id === selectedEdgeId);
   const isSourceTable = selectedEdge?.source === id;
@@ -61,7 +141,7 @@ function TableNode({
   const sourceColId = sourceHandleParts.length > 2 ? sourceHandleParts.slice(0, -2).join("-") : "";
   const targetColId = targetHandleParts.length > 2 ? targetHandleParts.slice(0, -2).join("-") : "";
 
-  
+
 
   // Create a Map for O(1) column lookups
   const columnsMap = useMemo(() => {
@@ -95,6 +175,11 @@ function TableNode({
     return columnsMap.get(id)?.name || "unknown";
   };
 
+  const handleCopyFromPopover = () => {
+    onCopy?.([id]);
+    setIsPopoverOpen(false);
+  };
+
   return (
     <ContextMenu>
       <ContextMenuTrigger>
@@ -114,7 +199,7 @@ function TableNode({
             <CardTitle className="text-sm text-center font-semibold p-2">
               {data.label}
             </CardTitle>
-            <PopoverWithArrow>
+            <PopoverWithArrow open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
               <PopoverWithArrowTrigger asChild>
                 <Button
                   variant="ghost"
@@ -166,6 +251,14 @@ function TableNode({
                     </div>
                   )}
                   <Separator />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-auto py-1 px-2 text-xs"
+                    onClick={handleCopyFromPopover}
+                  >
+                    <Copy className="h-3 w-3 mr-1" /> Copy Table
+                  </Button>
                   <Button
                     variant="destructive"
                     size="sm"
@@ -302,6 +395,9 @@ function TableNode({
         </Card>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        <ContextMenuItem onSelect={() => onCopy?.([id])}>
+          <Copy className="h-4 w-4 mr-2" /> Copy Table
+        </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => onDelete?.([id])}
           className="text-destructive focus:text-destructive"
@@ -320,15 +416,12 @@ const MemoizedTableNode = React.memo(TableNode, (prevProps, nextProps) => {
     prevProps.id === nextProps.id &&
     prevProps.selected === nextProps.selected &&
     prevProps.data.label === nextProps.data.label &&
+    prevProps.data.comment === nextProps.data.comment &&
     prevProps.data.color === nextProps.data.color &&
     prevProps.data.isLocked === nextProps.data.isLocked &&
     prevProps.data.isDeleted === nextProps.data.isDeleted &&
-    // Deep compare columns array
-    JSON.stringify(prevProps.data.columns) === JSON.stringify(nextProps.data.columns) &&
-    // Deep compare indices array
-    JSON.stringify(prevProps.data.indices) === JSON.stringify(nextProps.data.indices) &&
-    // Compare position if it exists
-    JSON.stringify(prevProps.data.position) === JSON.stringify(nextProps.data.position)
+    areColumnsEqual(prevProps.data.columns, nextProps.data.columns) &&
+    areIndicesEqual(prevProps.data.indices, nextProps.data.indices)
   );
 });
 

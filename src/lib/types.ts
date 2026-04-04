@@ -41,6 +41,28 @@ export interface AppState {
   key: string;
   value: string | number;
 }
+
+export type CheckpointType = "automatic" | "manual" | "migration";
+
+export interface DiagramCheckpoint {
+  id?: number;
+  diagramId: number;
+  checkpointNumber: number;
+  type: CheckpointType;
+  data: Diagram["data"];
+  createdAt: Date;
+  label?: string;
+  triggerReason?: string;
+  appVersion?: string;
+}
+
+export interface CheckpointSettings {
+  enabled: boolean;
+  intervalMinutes: number;
+  meaningfulChangeThreshold: number;
+  retentionHours: number;
+  maxCountPerDiagram: number;
+}
 export interface Column {
   id: string;
   name: string;
@@ -68,7 +90,7 @@ export interface Index {
   name: string;
   columns: string[];
   isUnique?: boolean;
-  type?: IndexType
+  type?: IndexType;
 }
 
 export interface CheckConstraint {
@@ -137,6 +159,7 @@ export interface Settings {
   allowTableOverlapDuringCreation: boolean;
   enableFreePanning: boolean;
   exportForeignKeyConstraint: boolean;
+  checkpoints: CheckpointSettings;
 }
 
 export type AppNode = Node<TableNodeData, "table">;

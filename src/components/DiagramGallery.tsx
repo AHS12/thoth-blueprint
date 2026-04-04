@@ -57,9 +57,10 @@ interface DiagramGalleryProps {
   onCheckForUpdate: () => void;
   onViewAbout: () => void;
   onViewWhatsNew: () => void;
+  onViewHelpCenter: () => void;
 }
 
-export default function DiagramGallery({ onInstallAppRequest, onCheckForUpdate, onViewAbout, onViewWhatsNew }: DiagramGalleryProps) {
+export default function DiagramGallery({ onInstallAppRequest, onCheckForUpdate, onViewAbout, onViewWhatsNew, onViewHelpCenter }: DiagramGalleryProps) {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
@@ -187,7 +188,9 @@ export default function DiagramGallery({ onInstallAppRequest, onCheckForUpdate, 
   return (
     <div className="p-4 md:p-8 h-full w-full bg-background overflow-y-auto">
       <div className="max-w-6xl mx-auto">
-        <AppIntro />
+        <div data-tour="gallery-intro">
+          <AppIntro />
+        </div>
 
         <div className="my-6 md:my-8">
           <Features />
@@ -198,7 +201,7 @@ export default function DiagramGallery({ onInstallAppRequest, onCheckForUpdate, 
           <div className="flex gap-2 items-center self-end md:self-center">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon">
+                <Button variant="outline" size="icon" data-tour="gallery-settings">
                   <Settings className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -217,6 +220,7 @@ export default function DiagramGallery({ onInstallAppRequest, onCheckForUpdate, 
                   <DropdownMenuItem onClick={onInstallAppRequest}>Install App</DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onViewHelpCenter}>Help Center</DropdownMenuItem>
                 <DropdownMenuItem onClick={onViewAbout}>About</DropdownMenuItem>
                 <DropdownMenuItem onClick={onViewWhatsNew}>What's New</DropdownMenuItem>
               </DropdownMenuContent>
@@ -229,11 +233,11 @@ export default function DiagramGallery({ onInstallAppRequest, onCheckForUpdate, 
               <Save className="h-4 w-4 md:mr-2" />
               <span className="hidden md:inline">Save Data</span>
             </Button>
-            <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+            <Button variant="outline" onClick={() => setIsImportDialogOpen(true)} data-tour="gallery-import">
               <Import className="h-4 w-4 md:mr-2" />
               <span className="hidden md:inline">Import Diagram</span>
             </Button>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <Button onClick={() => setIsCreateDialogOpen(true)} data-tour="gallery-create">
               <PlusCircle className="h-4 w-4 md:mr-2" />
               <span className="hidden md:inline">Create New</span>
             </Button>

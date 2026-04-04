@@ -1,9 +1,10 @@
 import Dexie, { type Table } from "dexie";
-import { AppState, Diagram } from "./types";
+import { AppState, Diagram, DiagramCheckpoint } from "./types";
 
 export class Database extends Dexie {
   diagrams!: Table<Diagram>;
   appState!: Table<AppState>;
+  checkpoints!: Table<DiagramCheckpoint>;
 
   constructor() {
     super("ThothBlueprintDB");
@@ -74,6 +75,11 @@ export class Database extends Dexie {
             }
           });
       });
+    this.version(8).stores({
+      diagrams: "++id, name, dbType, createdAt, updatedAt, deletedAt",
+      appState: "key",
+      checkpoints: "++id, diagramId, checkpointNumber, createdAt, type",
+    });
   }
 }
 

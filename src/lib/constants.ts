@@ -1,5 +1,9 @@
 import { Settings } from "./types";
 
+export const CHECKPOINT_MIGRATION_STATUS_KEY = "checkpointMigrationStatus";
+export const CHECKPOINT_MIGRATION_VERSION_KEY = "checkpointMigrationVersion";
+export const CHECKPOINT_GLOBAL_COUNTER_KEY = "checkpointGlobalCounter";
+
 export const relationshipTypes = [
   { value: "one-to-one", label: "One-to-One" },
   { value: "one-to-many", label: "One-to-Many" },
@@ -54,4 +58,11 @@ export const DEFAULT_SETTINGS: Settings = {
   allowTableOverlapDuringCreation: true,
   enableFreePanning: true,
   exportForeignKeyConstraint: true,
+  checkpoints: {
+    enabled: true,
+    intervalMinutes: 60,
+    meaningfulChangeThreshold: 20,
+    retentionHours: 40,
+    maxCountPerDiagram: 50,
+  },
 };

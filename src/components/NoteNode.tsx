@@ -87,9 +87,8 @@ const MemoizedNoteNode = React.memo(NoteNode, (prevProps, nextProps) => {
     prevProps.id === nextProps.id &&
     prevProps.selected === nextProps.selected &&
     prevProps.data.text === nextProps.data.text &&
-    prevProps.data.isPositionLocked === nextProps.data.isPositionLocked &&
-    // Compare position if it exists
-    JSON.stringify(prevProps.data.position) === JSON.stringify(nextProps.data.position)
+    prevProps.data.color === nextProps.data.color &&
+    prevProps.data.isPositionLocked === nextProps.data.isPositionLocked
   );
 });
 

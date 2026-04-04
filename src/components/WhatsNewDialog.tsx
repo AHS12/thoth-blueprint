@@ -1,16 +1,17 @@
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Button } from "@/components/ui/button";
 
 interface WhatsNewDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   markdown?: string;
   onReload?: () => void;
+  onStartTour?: () => void;
 }
 
-export function WhatsNewDialog({ isOpen, onOpenChange, markdown = "", onReload }: WhatsNewDialogProps) {
+export function WhatsNewDialog({ isOpen, onOpenChange, markdown = "", onReload, onStartTour }: WhatsNewDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent
@@ -40,11 +41,25 @@ export function WhatsNewDialog({ isOpen, onOpenChange, markdown = "", onReload }
           </ReactMarkdown>
         </div>
         <DialogFooter>
-          {onReload ? (
-            <Button onClick={onReload} className="w-full">Reload Now</Button>
-          ) : (
-            <Button onClick={() => onOpenChange(false)} className="w-full">Close</Button>
-          )}
+          <div className="flex w-full flex-col gap-2 sm:flex-row">
+            {onStartTour && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  onOpenChange(false);
+                  onStartTour();
+                }}
+              >
+                Take Tour
+              </Button>
+            )}
+            {onReload ? (
+              <Button onClick={onReload} className="w-full">Reload Now</Button>
+            ) : (
+              <Button onClick={() => onOpenChange(false)} className="w-full">Close</Button>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

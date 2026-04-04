@@ -1,5 +1,6 @@
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSidebarState } from "@/hooks/use-sidebar-state";
+import { exportDbToJson } from "@/lib/backup";
 import { tableColors } from "@/lib/colors";
 import { colors, KeyboardShortcuts } from "@/lib/constants";
 import { ElementType, type AppEdge, type AppNode, type AppNoteNode, type AppZoneNode, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
@@ -7,7 +8,7 @@ import { DEFAULT_NODE_SPACING, DEFAULT_TABLE_HEIGHT, DEFAULT_TABLE_WIDTH, findEx
 import { useStore, type StoreState } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { type ReactFlowInstance } from "@xyflow/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { AboutDialog } from "./AboutDialog";
 import { AddElementDialog } from "./AddElementDialog";
@@ -15,18 +16,34 @@ import { AddNoteDialog } from "./AddNoteDialog";
 import { AddRelationshipDialog } from "./AddRelationshipDialog";
 import { AddTableDialog } from "./AddTableDialog";
 import { AddZoneDialog } from "./AddZoneDialog";
+import { CheckpointMigrationDialog } from "./CheckpointMigrationDialog";
 import DiagramEditor from "./DiagramEditor";
 import DiagramGallery from "./DiagramGallery";
 import { DiagramLayout } from "./DiagramLayout";
 import EditorSidebar from "./EditorSidebar";
 import { ExportDialog } from "./ExportDialog";
+import { HelpCenterDialog } from "./HelpCenterDialog";
 import { PWAUpdateNotification } from "./PWAUpdateNotification";
+import { ProductTour, type ProductTourStep } from "./ProductTour";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { UpdateDialog } from "./UpdateDialog";
 import { WhatsNewDialog } from "./WhatsNewDialog";
 
 interface LayoutProps {
   onInstallAppRequest: () => void;
+}
+
+const GUIDED_EXPERIENCE_OPENED_GALLERY_KEY = "guidedExperienceOpened.gallery";
+const GUIDED_EXPERIENCE_OPENED_EDITOR_KEY = "guidedExperienceOpened.editor";
+const ONBOARDING_COMPLETED_KEY = "onboardingCompleted";
+const CHECKPOINT_MIGRATION_ACK_VERSION_KEY = "checkpointMigrationAcknowledgedVersion";
+const CHECKPOINT_MIGRATION_PREFERENCE_KEY = "checkpointMigrationPreference";
+const AUTO_CHECKPOINT_TICK_MS = 30_000;
+
+function getGuidedExperienceOpenedKey(mode: "gallery" | "editor") {
+  return mode === "editor"
+    ? GUIDED_EXPERIENCE_OPENED_EDITOR_KEY
+    : GUIDED_EXPERIENCE_OPENED_GALLERY_KEY;
 }
 
 export default function Layout({ onInstallAppRequest }: LayoutProps) {
@@ -37,6 +54,7 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
   const isMobile = useIsMobile();
 
   const diagram = diagramsMap.get(selectedDiagramId || 0);
+  const currentTourMode: "gallery" | "editor" = selectedDiagramId && diagram ? "editor" : "gallery";
 
   const existingTableNames = useMemo(() =>
     diagram?.data?.nodes?.map(n => n.data.label) ?? [],
@@ -48,7 +66,19 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
     [diagram]
   )
 
-  const { addNode, undoDelete, copyNodes, pasteNodes, lastCursorPosition, addEdge, setIsAddRelationshipDialogOpen } = useStore(
+  const {
+    addNode,
+    undoDelete,
+    copyNodes,
+    pasteNodes,
+    lastCursorPosition,
+    addEdge,
+    setIsAddRelationshipDialogOpen,
+    runCheckpointMigration,
+    runAutomaticCheckpointTick,
+    settings,
+    updateSettings,
+  } = useStore(
     useShallow((state: StoreState) => ({
       addNode: state.addNode,
       undoDelete: state.undoDelete,
@@ -57,6 +87,10 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       lastCursorPosition: state.lastCursorPosition,
       addEdge: state.addEdge,
       setIsAddRelationshipDialogOpen: state.setIsRelationshipDialogOpen,
+      runCheckpointMigration: state.runCheckpointMigration,
+      runAutomaticCheckpointTick: state.runAutomaticCheckpointTick,
+      settings: state.settings,
+      updateSettings: state.updateSettings,
     }))
   );
 
@@ -78,30 +112,141 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
   const [isAddZoneDialogOpen, setIsAddZoneDialogOpen] = useState(false);
   const [isShortcutsDialogOpen, setIsShortcutsDialogOpen] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
+  const [isHelpCenterOpen, setIsHelpCenterOpen] = useState(false);
   const [isAddElementDialogOpen, setIsAddElementDialogOpen] = useState(false);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+  const [isCheckpointMigrationDialogOpen, setIsCheckpointMigrationDialogOpen] = useState(false);
+  const [isCheckpointMigrationProcessing, setIsCheckpointMigrationProcessing] = useState(false);
+  const [isWhatsNewPendingAfterTour, setIsWhatsNewPendingAfterTour] = useState(false);
+  const [whatsNewPendingTourMode, setWhatsNewPendingTourMode] = useState<"gallery" | "editor" | null>(null);
+  const [isProductTourOpen, setIsProductTourOpen] = useState(false);
+  const [tourMode, setTourMode] = useState<"gallery" | "editor">("gallery");
   const [whatsNewMarkdown, setWhatsNewMarkdown] = useState<string>("");
+  const hasCheckedWhatsNewRef = useRef(false);
 
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance<ProcessedNode, ProcessedEdge> | null>(null);
 
+  const galleryTourSteps: ProductTourStep[] = useMemo(() => [
+    {
+      id: "gallery-intro",
+      title: "Welcome to ThothBlueprint",
+      description: "This home screen gives you your project overview and core starting points.",
+      target: '[data-tour="gallery-intro"]',
+      placement: "bottom",
+    },
+    {
+      id: "gallery-create",
+      title: "Create Your First Diagram",
+      description: "Use Create New to start from a blank schema and build visually.",
+      target: '[data-tour="gallery-create"]',
+      placement: "left",
+    },
+    {
+      id: "gallery-import",
+      title: "Import Existing Schema",
+      description: "Already have SQL, DBML, or JSON? Import it and continue editing offline.",
+      target: '[data-tour="gallery-import"]',
+      placement: "left",
+    },
+    {
+      id: "gallery-settings",
+      title: "Help and Updates",
+      description: "Open settings anytime for Help Center, updates, install options, and release notes.",
+      target: '[data-tour="gallery-settings"]',
+      placement: "bottom",
+    },
+  ], []);
+
+  const editorTourSteps: ProductTourStep[] = useMemo(() => [
+    {
+      id: "editor-add-element",
+      title: "Add Modeling Elements",
+      description: "Use this plus button to add tables, notes, zones, and relationships quickly.",
+      target: '[data-tour="editor-add-element"]',
+      placement: "left",
+    },
+    {
+      id: "editor-help-menu",
+      title: "Help Menu",
+      description: "Find the Help Center, What's New, shortcuts, and about info from here.",
+      target: '[data-tour="editor-help-menu"]',
+      placement: "bottom",
+    },
+    {
+      id: "editor-control-lock",
+      title: "Lock and Safety Controls",
+      description: "Use lock control to prevent accidental edits while reviewing your diagram.",
+      target: '[data-tour="editor-control-lock"]',
+      placement: "left",
+    },
+    {
+      id: "editor-control-reorganize",
+      title: "Auto Reorganize",
+      description: "Reorganize can clean up complex layouts while preserving relationship clarity.",
+      target: '[data-tour="editor-control-reorganize"]',
+      placement: "left",
+    },
+    {
+      id: "editor-checkpoint-history",
+      title: "Checkpoint History",
+      description: "Use the checkpoint count to quickly open history, preview snapshots, and restore safely.",
+      target: '[data-tour="editor-checkpoint-history"]',
+      placement: "bottom",
+    },
+  ], []);
+
+  const activeTourSteps = useMemo(
+    () => tourMode === "editor" ? editorTourSteps : galleryTourSteps,
+    [tourMode, editorTourSteps, galleryTourSteps]
+  );
+
   // Auto-show What's New when app version changes and fetch local markdown
   useEffect(() => {
+    if (hasCheckedWhatsNewRef.current) return;
+    hasCheckedWhatsNewRef.current = true;
+
     const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
     const lastSeenVersion = localStorage.getItem('whatsNewSeenVersion');
+    const pendingMode = currentTourMode;
+    const hasOpenedGuidedExperienceForMode = localStorage.getItem(getGuidedExperienceOpenedKey(pendingMode)) === "true";
+    const shouldQueueForGuidedExperience = !hasOpenedGuidedExperienceForMode;
+
     if (currentVersion && currentVersion !== lastSeenVersion) {
       fetch('/whats-new.md')
         .then((res) => res.ok ? res.text() : Promise.reject(new Error('Failed to load whats-new.md')))
         .then((text) => {
           setWhatsNewMarkdown(text);
-          setIsWhatsNewOpen(true);
+          if (shouldQueueForGuidedExperience) {
+            setIsWhatsNewPendingAfterTour(true);
+            setWhatsNewPendingTourMode(pendingMode);
+          } else {
+            setIsWhatsNewOpen(true);
+          }
         })
         .catch((err) => {
           console.error('Error loading whats-new.md', err);
           setWhatsNewMarkdown('# What\'s New\n\nUpdate available.');
-          setIsWhatsNewOpen(true);
+          if (shouldQueueForGuidedExperience) {
+            setIsWhatsNewPendingAfterTour(true);
+            setWhatsNewPendingTourMode(pendingMode);
+          } else {
+            setIsWhatsNewOpen(true);
+          }
         });
     }
-  }, []);
+  }, [currentTourMode]);
+
+  useEffect(() => {
+    if (!isWhatsNewPendingAfterTour || !whatsNewPendingTourMode) return;
+
+    const tourWasOpenedForPendingMode = localStorage.getItem(getGuidedExperienceOpenedKey(whatsNewPendingTourMode)) === "true";
+
+    if (!isProductTourOpen && tourWasOpenedForPendingMode) {
+      setIsWhatsNewOpen(true);
+      setIsWhatsNewPendingAfterTour(false);
+      setWhatsNewPendingTourMode(null);
+    }
+  }, [isProductTourOpen, isWhatsNewPendingAfterTour, whatsNewPendingTourMode]);
 
   // Manual open handler to view What's New on demand
   const openWhatsNew = () => {
@@ -117,6 +262,97 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
         setIsWhatsNewOpen(true);
       });
   };
+
+  const maybePromptCheckpointMigration = useCallback(() => {
+    const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+    const acknowledgedVersion = localStorage.getItem(CHECKPOINT_MIGRATION_ACK_VERSION_KEY);
+    if (acknowledgedVersion === currentVersion) {
+      return;
+    }
+
+    const preference = localStorage.getItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY);
+    if (preference === "enabled") {
+      return;
+    }
+
+    setIsCheckpointMigrationDialogOpen(true);
+  }, []);
+
+  const handleCheckpointMigrationLater = useCallback(() => {
+    const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+    localStorage.setItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY, "deferred");
+    localStorage.setItem(CHECKPOINT_MIGRATION_ACK_VERSION_KEY, currentVersion);
+    setIsCheckpointMigrationDialogOpen(false);
+  }, []);
+
+  const handleEnableCheckpointMigration = useCallback(async () => {
+    setIsCheckpointMigrationProcessing(true);
+    try {
+      // Mandatory backup-first guard before running any migration logic.
+      exportDbToJson();
+
+      const result = await runCheckpointMigration();
+      updateSettings({
+        checkpoints: {
+          ...settings.checkpoints,
+          enabled: true,
+        },
+      });
+      const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+      localStorage.setItem(CHECKPOINT_MIGRATION_PREFERENCE_KEY, "enabled");
+      localStorage.setItem(CHECKPOINT_MIGRATION_ACK_VERSION_KEY, currentVersion);
+      setIsCheckpointMigrationDialogOpen(false);
+
+      if (!result.skipped) {
+        showSuccess(`Checkpoint migration completed. ${result.migratedCount} baseline checkpoints created.`);
+      }
+    } catch (error) {
+      console.error("Checkpoint migration failed:", error);
+      showError("Failed to enable checkpoints. You can try again later.");
+    } finally {
+      setIsCheckpointMigrationProcessing(false);
+    }
+  }, [runCheckpointMigration, settings.checkpoints, updateSettings]);
+
+  const startProductTour = useCallback((markAsOpened = true) => {
+    setTourMode(currentTourMode);
+    setIsProductTourOpen(true);
+    if (markAsOpened) {
+      localStorage.setItem(getGuidedExperienceOpenedKey(currentTourMode), "true");
+    }
+  }, [currentTourMode]);
+
+  const completeOnboarding = () => {
+    localStorage.setItem(ONBOARDING_COMPLETED_KEY, "true");
+  };
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const tourOpenedKey = getGuidedExperienceOpenedKey(currentTourMode);
+    const hasOpenedGuidedExperience = localStorage.getItem(tourOpenedKey) === "true";
+
+    // First-time per-context users should see the guided experience once.
+    if (!hasOpenedGuidedExperience) {
+      startProductTour(false);
+      localStorage.setItem(tourOpenedKey, "true");
+      return;
+    }
+  }, [isLoading, currentTourMode, startProductTour]);
+
+  useEffect(() => {
+    if (isLoading || !selectedDiagramId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void runAutomaticCheckpointTick();
+    }, AUTO_CHECKPOINT_TICK_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isLoading, selectedDiagramId, runAutomaticCheckpointTick]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -324,8 +560,8 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
     }
 
     // Create column maps for O(1) lookups
-    const sourceColumnsMap = new Map(sourceNode.data.columns.map(col => [col.id, col]));
-    const targetColumnsMap = new Map(targetNode.data.columns.map(col => [col.id, col]));
+    const sourceColumnsMap = new Map(sourceNode?.data.columns.map(col => [col.id, col]));
+    const targetColumnsMap = new Map(targetNode?.data.columns.map(col => [col.id, col]));
 
     const sourceColumn = sourceColumnsMap.get(sourceColumnId);
     const targetColumn = targetColumnsMap.get(targetColumnId);
@@ -351,7 +587,7 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       sourceHandle,
       targetHandle
     );
-    
+
     if (existingEdge) {
       showError("This relationship already exists.");
       return;
@@ -387,6 +623,7 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       onViewShortcuts={() => setIsShortcutsDialogOpen(true)}
       onViewAbout={() => setIsAboutDialogOpen(true)}
       onViewWhatsNew={openWhatsNew}
+      onViewHelpCenter={() => setIsHelpCenterOpen(true)}
     />
   ) : null;
 
@@ -412,6 +649,7 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
             onCheckForUpdate={() => setIsUpdateDialogOpen(true)}
             onViewAbout={() => setIsAboutDialogOpen(true)}
             onViewWhatsNew={openWhatsNew}
+            onViewHelpCenter={() => setIsHelpCenterOpen(true)}
           />
         </div>
       )}
@@ -434,6 +672,13 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
       <UpdateDialog isOpen={isUpdateDialogOpen} onOpenChange={setIsUpdateDialogOpen} />
       <ShortcutsDialog isOpen={isShortcutsDialogOpen} onOpenChange={setIsShortcutsDialogOpen} />
       <AboutDialog isOpen={isAboutDialogOpen} onOpenChange={setIsAboutDialogOpen} />
+      <HelpCenterDialog
+        isOpen={isHelpCenterOpen}
+        onOpenChange={setIsHelpCenterOpen}
+        onStartTour={startProductTour}
+        onViewShortcuts={() => setIsShortcutsDialogOpen(true)}
+        onViewWhatsNew={openWhatsNew}
+      />
       <WhatsNewDialog
         isOpen={isWhatsNewOpen}
         onOpenChange={(open) => {
@@ -441,9 +686,24 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
           if (!open) {
             const currentVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
             localStorage.setItem('whatsNewSeenVersion', currentVersion);
+            maybePromptCheckpointMigration();
           }
         }}
         markdown={whatsNewMarkdown}
+        onStartTour={startProductTour}
+      />
+      <CheckpointMigrationDialog
+        isOpen={isCheckpointMigrationDialogOpen}
+        isProcessing={isCheckpointMigrationProcessing}
+        onEnableNow={handleEnableCheckpointMigration}
+        onLater={handleCheckpointMigrationLater}
+      />
+      <ProductTour
+        isOpen={isProductTourOpen}
+        onOpenChange={setIsProductTourOpen}
+        steps={activeTourSteps}
+        onComplete={completeOnboarding}
+        onSkip={completeOnboarding}
       />
     </>
   );

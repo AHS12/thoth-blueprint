@@ -31,6 +31,7 @@ import { parseDbmlAsync } from "@/lib/importer/dbml-parser";
 import { parseMySqlDdlAsync } from "@/lib/importer/mysql-ddl-parser";
 import { type DatabaseType, type Diagram } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useStore } from "@/store/store";
 import { showError } from "@/utils/toast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Database, FileJson, FileText, Terminal, Upload } from "lucide-react";
@@ -143,6 +144,9 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
+      // Import path enforces checkpoint compatibility migration by default.
+      await useStore.getState().runCheckpointMigration();
+
       let diagramData: Diagram['data'];
       const dbType = values.dbType as DatabaseType;
 
