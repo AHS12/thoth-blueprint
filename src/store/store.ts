@@ -2,20 +2,20 @@ import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { organizeTablesByRelationshipsWithZones } from "@/lib/layout-algorithms";
 import {
-    Settings,
-    type AppEdge,
-    type AppNode,
-    type AppNoteNode,
-    type AppZoneNode,
-    type DatabaseType,
-    type Diagram,
+  Settings,
+  type AppEdge,
+  type AppNode,
+  type AppNoteNode,
+  type AppZoneNode,
+  type DatabaseType,
+  type Diagram,
 } from "@/lib/types";
 import { findExistingRelationship } from "@/lib/utils";
 import {
-    applyEdgeChanges,
-    applyNodeChanges,
-    type EdgeChange,
-    type NodeChange,
+  applyEdgeChanges,
+  applyNodeChanges,
+  type EdgeChange,
+  type NodeChange,
 } from "@xyflow/react";
 import debounce from "lodash/debounce";
 import { create } from "zustand";
@@ -41,7 +41,7 @@ export interface StoreState {
   setLastCursorPosition: (position: { x: number; y: number } | null) => void;
   updateSettings: (settings: Partial<Settings>) => void;
   createDiagram: (
-    diagram: Omit<Diagram, "id" | "createdAt" | "updatedAt">
+    diagram: Omit<Diagram, "id" | "createdAt" | "updatedAt">,
   ) => Promise<void>;
   importDiagram: (diagramData: {
     name: string;
@@ -76,24 +76,60 @@ export const TABLE_SOFT_DELETE_LIMIT = 10;
 
 // Helper function to create diagrams map from array
 function createDiagramsMap(diagrams: Diagram[]): Map<number, Diagram> {
-  return new Map(diagrams.map(diagram => [diagram.id!, diagram]));
+  return new Map(diagrams.map((diagram) => [diagram.id!, diagram]));
 }
 
 // Helper function to get diagram by ID with O(1) lookup
-function getDiagramById(diagramsMap: Map<number, Diagram>, id: number | null): Diagram | undefined {
+function getDiagramById(
+  diagramsMap: Map<number, Diagram>,
+  id: number | null,
+): Diagram | undefined {
   return id ? diagramsMap.get(id) : undefined;
 }
 
 // Helper function to update diagrams and maintain map consistency
 function updateDiagramsWithMap(
-  diagrams: Diagram[], 
-  updater: (diagrams: Diagram[]) => Diagram[]
+  diagrams: Diagram[],
+  updater: (diagrams: Diagram[]) => Diagram[],
 ): { diagrams: Diagram[]; diagramsMap: Map<number, Diagram> } {
   const updatedDiagrams = updater(diagrams);
   return {
     diagrams: updatedDiagrams,
     diagramsMap: createDiagramsMap(updatedDiagrams),
   };
+}
+
+function createRuntimeSafeNodeId(prefix: string, index: number): string {
+  return `${prefix}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function hasSameNodeContentExcludingPosition(
+  currentNode: AppNode | AppNoteNode | AppZoneNode,
+  previousNode: AppNode | AppNoteNode | AppZoneNode,
+): boolean {
+  return (
+    currentNode.id === previousNode.id &&
+    currentNode.type === previousNode.type &&
+    currentNode.data === previousNode.data &&
+    currentNode.width === previousNode.width &&
+    currentNode.height === previousNode.height &&
+    currentNode.parentId === previousNode.parentId &&
+    currentNode.sourcePosition === previousNode.sourcePosition &&
+    currentNode.targetPosition === previousNode.targetPosition &&
+    currentNode.style === previousNode.style &&
+    currentNode.className === previousNode.className &&
+    currentNode.hidden === previousNode.hidden &&
+    currentNode.selected === previousNode.selected &&
+    currentNode.dragging === previousNode.dragging &&
+    currentNode.zIndex === previousNode.zIndex &&
+    currentNode.draggable === previousNode.draggable &&
+    currentNode.selectable === previousNode.selectable &&
+    currentNode.connectable === previousNode.connectable &&
+    currentNode.deletable === previousNode.deletable &&
+    currentNode.dragHandle === previousNode.dragHandle &&
+    currentNode.extent === previousNode.extent &&
+    currentNode.expandParent === previousNode.expandParent
+  );
 }
 
 let previousDiagrams: Diagram[] = [];
@@ -104,9 +140,12 @@ const debouncedSavePositions = debounce(
     try {
       const diagramsMap = createDiagramsMap(diagrams);
       const previousDiagramsMap = createDiagramsMap(previousDiagrams);
-      
+
       const currentDiagram = getDiagramById(diagramsMap, selectedDiagramId);
-      const previousDiagram = getDiagramById(previousDiagramsMap, previousSelectedDiagramId);
+      const previousDiagram = getDiagramById(
+        previousDiagramsMap,
+        previousSelectedDiagramId,
+      );
 
       if (!currentDiagram || !previousDiagram) {
         await debouncedSaveFull(diagrams, selectedDiagramId);
@@ -116,15 +155,15 @@ const debouncedSavePositions = debounce(
       const onlyPositionsChanged =
         checkIfOnlyPositionsChanged(
           currentDiagram.data.nodes || [],
-          previousDiagram.data.nodes || []
+          previousDiagram.data.nodes || [],
         ) &&
         checkIfOnlyPositionsChanged(
           currentDiagram.data.notes || [],
-          previousDiagram.data.notes || []
+          previousDiagram.data.notes || [],
         ) &&
         checkIfOnlyPositionsChanged(
           currentDiagram.data.zones || [],
-          previousDiagram.data.zones || []
+          previousDiagram.data.zones || [],
         );
 
       if (onlyPositionsChanged) {
@@ -140,7 +179,7 @@ const debouncedSavePositions = debounce(
       console.error("Failed to save position changes to IndexedDB:", error);
     }
   },
-  300
+  300,
 );
 
 const debouncedSaveFull = debounce(
@@ -158,7 +197,7 @@ const debouncedSaveFull = debounce(
         // This prevents accidental full data wipe if a save triggers before load
         if (storeDiagramIds.length > 0) {
           const idsToDelete = allDbDiagramIds.filter(
-            (id) => !storeDiagramIds.includes(id)
+            (id) => !storeDiagramIds.includes(id),
           );
           if (idsToDelete.length > 0) {
             await db.diagrams.bulkDelete(idsToDelete);
@@ -185,13 +224,13 @@ const debouncedSaveFull = debounce(
       console.error("Failed to save state to IndexedDB:", error);
     }
   },
-  1000
+  1000,
 );
 
 // Helper function to check if only positions changed
 function checkIfOnlyPositionsChanged(
   currentNodes: (AppNode | AppNoteNode | AppZoneNode)[],
-  previousNodes: (AppNode | AppNoteNode | AppZoneNode)[]
+  previousNodes: (AppNode | AppNoteNode | AppZoneNode)[],
 ): boolean {
   if (currentNodes.length !== previousNodes.length) {
     return false;
@@ -209,13 +248,7 @@ function checkIfOnlyPositionsChanged(
       return false;
     }
 
-    const { position: _, ...currentWithoutPosition } = currentNode;
-    const { position: __, ...previousWithoutPosition } = previousNode;
-
-    if (
-      JSON.stringify(currentWithoutPosition) !==
-      JSON.stringify(previousWithoutPosition)
-    ) {
+    if (!hasSameNodeContentExcludingPosition(currentNode, previousNode)) {
       return false;
     }
 
@@ -234,7 +267,7 @@ function checkIfOnlyPositionsChanged(
 // Helper function to save only position changes using Dexie's modify
 async function savePositionChanges(
   currentDiagram: Diagram,
-  previousDiagram: Diagram
+  previousDiagram: Diagram,
 ) {
   try {
     const changedNodes: {
@@ -244,7 +277,7 @@ async function savePositionChanges(
     }[] = [];
 
     const currentTableMap = new Map(
-      (currentDiagram.data.nodes || []).map((n) => [n.id, n])
+      (currentDiagram.data.nodes || []).map((n) => [n.id, n]),
     );
     for (const prevNode of previousDiagram.data.nodes || []) {
       const currentNode = currentTableMap.get(prevNode.id);
@@ -262,7 +295,7 @@ async function savePositionChanges(
     }
 
     const currentNoteMap = new Map(
-      (currentDiagram.data.notes || []).map((n) => [n.id, n])
+      (currentDiagram.data.notes || []).map((n) => [n.id, n]),
     );
     for (const prevNote of previousDiagram.data.notes || []) {
       const currentNote = currentNoteMap.get(prevNote.id);
@@ -280,7 +313,7 @@ async function savePositionChanges(
     }
 
     const currentZoneMap = new Map(
-      (currentDiagram.data.zones || []).map((z) => [z.id, z])
+      (currentDiagram.data.zones || []).map((z) => [z.id, z]),
     );
     for (const prevZone of previousDiagram.data.zones || []) {
       const currentZone = currentZoneMap.get(prevZone.id);
@@ -311,7 +344,7 @@ async function savePositionChanges(
 // Main debounced save function that determines which strategy to use
 const debouncedSave = async (
   diagrams: Diagram[],
-  selectedDiagramId: number | null
+  selectedDiagramId: number | null,
 ) => {
   await debouncedSavePositions(diagrams, selectedDiagramId);
 };
@@ -322,7 +355,7 @@ async function saveSpecificNodePositions(
     id: string;
     position: { x: number; y: number };
     type: string;
-  }[]
+  }[],
 ) {
   try {
     await db.transaction("rw", db.diagrams, async () => {
@@ -332,10 +365,10 @@ async function saveSpecificNodePositions(
         .equals(diagramId)
         .modify((diagram) => {
           const updatedNodeMap = new Map(
-            updatedNodes.map((node) => [node.id, node.position])
+            updatedNodes.map((node) => [node.id, node.position]),
           );
           const updatedNodeTypes = new Map(
-            updatedNodes.map((node) => [node.id, node.type])
+            updatedNodes.map((node) => [node.id, node.type]),
           );
 
           if (diagram.data.nodes) {
@@ -414,7 +447,7 @@ export const useStore = create(
         typeof selectedDiagramIdState.value === "number"
       ) {
         const diagramExists = diagrams.some(
-          (d) => d.id === selectedDiagramIdState.value && !d.deletedAt
+          (d) => d.id === selectedDiagramIdState.value && !d.deletedAt,
         );
         if (diagramExists) {
           selectedDiagramId = selectedDiagramIdState.value;
@@ -484,11 +517,15 @@ export const useStore = create(
       });
     },
     renameDiagram: (id, name) => {
-      set((state) => ({
-        diagrams: state.diagrams.map((d) =>
-          d.id === id ? { ...d, name, updatedAt: new Date() } : d
-        ),
-      }));
+      set((state) => {
+        const updatedDiagrams = state.diagrams.map((d) =>
+          d.id === id ? { ...d, name, updatedAt: new Date() } : d,
+        );
+        return {
+          diagrams: updatedDiagrams,
+          diagramsMap: createDiagramsMap(updatedDiagrams),
+        };
+      });
     },
     duplicateDiagram: async (id) => {
       // Use set to get the current state and perform the duplication
@@ -499,7 +536,7 @@ export const useStore = create(
         }
 
         // Generate a unique name for the duplicate
-        const existingNames = new Set(state.diagrams.map(d => d.name));
+        const existingNames = new Set(state.diagrams.map((d) => d.name));
         let duplicateName = `${currentDiagram.name} (Copy)`;
         let counter = 1;
         while (existingNames.has(duplicateName)) {
@@ -509,36 +546,43 @@ export const useStore = create(
 
         // Create new IDs for nodes, edges, notes, and zones
         const nodeIdMap = new Map();
-        const newNodes = currentDiagram.data.nodes?.map(node => {
-          const newId = `${node.type}-${+new Date()}-${Math.random().toString(36).substr(2, 9)}`;
-          nodeIdMap.set(node.id, newId);
-          return {
-            ...node,
-            id: newId,
+        const newNodes =
+          currentDiagram.data.nodes?.map((node) => {
+            const newId = `${node.type}-${+new Date()}-${Math.random().toString(36).substr(2, 9)}`;
+            nodeIdMap.set(node.id, newId);
+            return {
+              ...node,
+              id: newId,
+              selected: false,
+            };
+          }) || [];
+
+        const newEdges =
+          currentDiagram.data.edges?.map((edge) => ({
+            ...edge,
+            id: `edge-${+new Date()}-${Math.random().toString(36).substr(2, 9)}`,
+            source: nodeIdMap.get(edge.source) || edge.source,
+            target: nodeIdMap.get(edge.target) || edge.target,
+          })) || [];
+
+        const newNotes =
+          currentDiagram.data.notes?.map((note) => ({
+            ...note,
+            id: `${note.type}-${+new Date()}-${Math.random().toString(36).substr(2, 9)}`,
             selected: false,
-          };
-        }) || [];
+          })) || [];
 
-        const newEdges = currentDiagram.data.edges?.map(edge => ({
-          ...edge,
-          id: `edge-${+new Date()}-${Math.random().toString(36).substr(2, 9)}`,
-          source: nodeIdMap.get(edge.source) || edge.source,
-          target: nodeIdMap.get(edge.target) || edge.target,
-        })) || [];
+        const newZones =
+          currentDiagram.data.zones?.map((zone) => ({
+            ...zone,
+            id: `${zone.type}-${+new Date()}-${Math.random().toString(36).substr(2, 9)}`,
+            selected: false,
+          })) || [];
 
-        const newNotes = currentDiagram.data.notes?.map(note => ({
-          ...note,
-          id: `${note.type}-${+new Date()}-${Math.random().toString(36).substr(2, 9)}`,
-          selected: false,
-        })) || [];
-
-        const newZones = currentDiagram.data.zones?.map(zone => ({
-          ...zone,
-          id: `${zone.type}-${+new Date()}-${Math.random().toString(36).substr(2, 9)}`,
-          selected: false,
-        })) || [];
-
-        const duplicatedDiagram: Omit<Diagram, "id" | "createdAt" | "updatedAt"> = {
+        const duplicatedDiagram: Omit<
+          Diagram,
+          "id" | "createdAt" | "updatedAt"
+        > = {
           name: duplicateName,
           dbType: currentDiagram.dbType,
           data: {
@@ -555,51 +599,71 @@ export const useStore = create(
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        
+
         // Add to database and update state
-        db.diagrams.add(newDiagram).then((newId) => {
-          set((state) => {
-            const updatedDiagrams = [...state.diagrams, { ...newDiagram, id: newId }];
-            return {
-              diagrams: updatedDiagrams,
-              diagramsMap: createDiagramsMap(updatedDiagrams),
-              selectedDiagramId: newId,
-            };
+        db.diagrams
+          .add(newDiagram)
+          .then((newId) => {
+            set((state) => {
+              const updatedDiagrams = [
+                ...state.diagrams,
+                { ...newDiagram, id: newId },
+              ];
+              return {
+                diagrams: updatedDiagrams,
+                diagramsMap: createDiagramsMap(updatedDiagrams),
+                selectedDiagramId: newId,
+              };
+            });
+          })
+          .catch((error) => {
+            console.error("Failed to duplicate diagram:", error);
           });
-        }).catch((error) => {
-          console.error('Failed to duplicate diagram:', error);
-        });
-        
+
         return state;
       });
     },
     moveDiagramToTrash: (id) => {
-      set((state) => ({
-        diagrams: state.diagrams.map((d) =>
+      set((state) => {
+        const updatedDiagrams = state.diagrams.map((d) =>
           d.id === id
             ? { ...d, deletedAt: new Date(), updatedAt: new Date() }
-            : d
-        ),
-      }));
+            : d,
+        );
+
+        return {
+          diagrams: updatedDiagrams,
+          diagramsMap: createDiagramsMap(updatedDiagrams),
+        };
+      });
     },
     restoreDiagram: (id) => {
-      set((state) => ({
-        diagrams: state.diagrams.map((d) =>
-          d.id === id ? { ...d, deletedAt: null, updatedAt: new Date() } : d
-        ),
-      }));
+      set((state) => {
+        const updatedDiagrams = state.diagrams.map((d) =>
+          d.id === id ? { ...d, deletedAt: null, updatedAt: new Date() } : d,
+        );
+
+        return {
+          diagrams: updatedDiagrams,
+          diagramsMap: createDiagramsMap(updatedDiagrams),
+        };
+      });
     },
     permanentlyDeleteDiagram: (id) => {
-      set((state) => ({
-        diagrams: state.diagrams.filter((d) => d.id !== id),
-      }));
+      set((state) => {
+        const updatedDiagrams = state.diagrams.filter((d) => d.id !== id);
+        return {
+          diagrams: updatedDiagrams,
+          diagramsMap: createDiagramsMap(updatedDiagrams),
+        };
+      });
     },
     updateCurrentDiagramData: (data) => {
       set((state) => {
         const updatedDiagrams = state.diagrams.map((d) =>
           d.id === state.selectedDiagramId
             ? { ...d, data: { ...d.data, ...data }, updatedAt: new Date() }
-            : d
+            : d,
         );
         return {
           diagrams: updatedDiagrams,
@@ -609,7 +673,10 @@ export const useStore = create(
     },
     onNodesChange: (changes) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
 
         const allDiagramNodes = [
@@ -620,13 +687,13 @@ export const useStore = create(
         const updatedNodes = applyNodeChanges(changes, allDiagramNodes);
 
         const newNodes = updatedNodes.filter(
-          (n) => n.type === "table"
+          (n) => n.type === "table",
         ) as AppNode[];
         const newNotes = updatedNodes.filter(
-          (n) => n.type === "note"
+          (n) => n.type === "note",
         ) as AppNoteNode[];
         const newZones = updatedNodes.filter(
-          (n) => n.type === "zone"
+          (n) => n.type === "zone",
         ) as AppZoneNode[];
 
         const updatedDiagrams = state.diagrams.map((d) =>
@@ -641,7 +708,7 @@ export const useStore = create(
                 },
                 updatedAt: new Date(),
               }
-            : d
+            : d,
         );
 
         return {
@@ -652,13 +719,16 @@ export const useStore = create(
     },
     onEdgesChange: (changes) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
         const updatedEdges = applyEdgeChanges(
           changes,
-          diagram.data.edges || []
+          diagram.data.edges || [],
         ) as AppEdge[];
-        
+
         const updatedDiagrams = state.diagrams.map((d) =>
           d.id === state.selectedDiagramId
             ? {
@@ -666,9 +736,9 @@ export const useStore = create(
                 data: { ...d.data, edges: updatedEdges },
                 updatedAt: new Date(),
               }
-            : d
+            : d,
         );
-        
+
         return {
           diagrams: updatedDiagrams,
           diagramsMap: createDiagramsMap(updatedDiagrams),
@@ -677,24 +747,27 @@ export const useStore = create(
     },
     addEdge: (edge) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
-        
+
         const existingEdge = findExistingRelationship(
           diagram.data.edges || [],
           edge.source,
           edge.target,
-          edge.sourceHandle || '',
-          edge.targetHandle || ''
+          edge.sourceHandle || "",
+          edge.targetHandle || "",
         );
-        
+
         // If duplicate exists, don't add it
         if (existingEdge) {
           return state;
         }
-        
+
         const newEdges = [...(diagram.data.edges || []), edge];
-        
+
         const updatedDiagrams = state.diagrams.map((d) =>
           d.id === state.selectedDiagramId
             ? {
@@ -702,9 +775,9 @@ export const useStore = create(
                 data: { ...d.data, edges: newEdges },
                 updatedAt: new Date(),
               }
-            : d
+            : d,
         );
-        
+
         return {
           diagrams: updatedDiagrams,
           diagramsMap: createDiagramsMap(updatedDiagrams),
@@ -713,22 +786,25 @@ export const useStore = create(
     },
     updateNode: (nodeToUpdate) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
 
         const updatedData = { ...diagram.data };
 
         if (nodeToUpdate.type === "table") {
           updatedData.nodes = (diagram.data.nodes || []).map((node) =>
-            node.id === nodeToUpdate.id ? (nodeToUpdate as AppNode) : node
+            node.id === nodeToUpdate.id ? (nodeToUpdate as AppNode) : node,
           );
         } else if (nodeToUpdate.type === "note") {
           updatedData.notes = (diagram.data.notes || []).map((note) =>
-            note.id === nodeToUpdate.id ? (nodeToUpdate as AppNoteNode) : note
+            note.id === nodeToUpdate.id ? (nodeToUpdate as AppNoteNode) : note,
           );
         } else if (nodeToUpdate.type === "zone") {
           updatedData.zones = (diagram.data.zones || []).map((zone) =>
-            zone.id === nodeToUpdate.id ? (nodeToUpdate as AppZoneNode) : zone
+            zone.id === nodeToUpdate.id ? (nodeToUpdate as AppZoneNode) : zone,
           );
         }
 
@@ -740,14 +816,17 @@ export const useStore = create(
                   data: updatedData,
                   updatedAt: new Date(),
                 }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
     deleteNodes: (nodeIds) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
 
         // Helper function to mark table nodes as deleted
@@ -762,12 +841,12 @@ export const useStore = create(
                     deletedAt: new Date(),
                   },
                 }
-              : item
+              : item,
           );
 
         const nodesWithNewDeletes = markAsDeleted(diagram.data.nodes);
         const allDeletedTables = nodesWithNewDeletes.filter(
-          (node) => node.type === "table" && node.data?.isDeleted === true
+          (node) => node.type === "table" && node.data?.isDeleted === true,
         );
 
         let finalNodes = nodesWithNewDeletes;
@@ -788,15 +867,15 @@ export const useStore = create(
             allDeletedTables.length - TABLE_SOFT_DELETE_LIMIT;
           const tablesToRemove = sortedDeletedTables.slice(
             0,
-            tablesToRemoveCount
+            tablesToRemoveCount,
           );
           const tableIdsToRemove = new Set(
-            tablesToRemove.map((table) => table.id)
+            tablesToRemove.map((table) => table.id),
           );
 
           // Permanently remove the oldest deleted tables
           finalNodes = nodesWithNewDeletes.filter(
-            (node) => !tableIdsToRemove.has(node.id)
+            (node) => !tableIdsToRemove.has(node.id),
           );
         }
 
@@ -819,17 +898,20 @@ export const useStore = create(
                   },
                   updatedAt: new Date(),
                 }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
     updateEdge: (edgeToUpdate) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
         const newEdges = (diagram.data.edges || []).map((edge) =>
-          edge.id === edgeToUpdate.id ? edgeToUpdate : edge
+          edge.id === edgeToUpdate.id ? edgeToUpdate : edge,
         );
         return updateDiagramsWithMap(state.diagrams, (diagrams) =>
           diagrams.map((d) =>
@@ -839,17 +921,20 @@ export const useStore = create(
                   data: { ...d.data, edges: newEdges },
                   updatedAt: new Date(),
                 }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
     deleteEdge: (edgeId) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
         const newEdges = (diagram.data.edges || []).filter(
-          (edge) => edge.id !== edgeId
+          (edge) => edge.id !== edgeId,
         );
         return updateDiagramsWithMap(state.diagrams, (diagrams) =>
           diagrams.map((d) =>
@@ -859,14 +944,17 @@ export const useStore = create(
                   data: { ...d.data, edges: newEdges },
                   updatedAt: new Date(),
                 }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
     addNode: (node) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
 
         const updatedData = { ...diagram.data };
@@ -882,18 +970,21 @@ export const useStore = create(
           diagrams.map((d) =>
             d.id === state.selectedDiagramId
               ? { ...d, data: updatedData, updatedAt: new Date() }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
     undoDelete: () => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
 
         const deletedNodes = (diagram.data.nodes || []).filter(
-          (n) => n.data?.isDeleted === true && n.data?.deletedAt
+          (n) => n.data?.isDeleted === true && n.data?.deletedAt,
         );
 
         if (deletedNodes.length === 0) return state;
@@ -901,7 +992,7 @@ export const useStore = create(
         const lastDeletedNode = deletedNodes.reduce((latest, current) => {
           const latestTime = new Date(latest?.data?.deletedAt || "").getTime();
           const currentTime = new Date(
-            current?.data?.deletedAt || ""
+            current?.data?.deletedAt || "",
           ).getTime();
           return latestTime > currentTime ? latest : current;
         });
@@ -931,53 +1022,54 @@ export const useStore = create(
                   },
                   updatedAt: new Date(),
                 }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
 
     batchUpdateNodes: (nodesToUpdate) => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
-        
+
         const nodeMap = new Map(nodesToUpdate.map((n) => [n.id, n]));
-        
-        const newNodes = (diagram.data.nodes || []).map(
-          (n) => {
-            const updated = nodeMap.get(n.id);
-            return (updated && updated.type === 'table' ? updated as AppNode : n);
-          }
-        );
-        const newNotes = (diagram.data.notes || []).map(
-          (n) => {
-            const updated = nodeMap.get(n.id);
-            return (updated && updated.type === 'note' ? updated as AppNoteNode : n);
-          }
-        );
-        const newZones = (diagram.data.zones || []).map(
-          (n) => {
-            const updated = nodeMap.get(n.id);
-            return (updated && updated.type === 'zone' ? updated as AppZoneNode : n);
-          }
-        );
+
+        const newNodes = (diagram.data.nodes || []).map((n) => {
+          const updated = nodeMap.get(n.id);
+          return updated && updated.type === "table" ? (updated as AppNode) : n;
+        });
+        const newNotes = (diagram.data.notes || []).map((n) => {
+          const updated = nodeMap.get(n.id);
+          return updated && updated.type === "note"
+            ? (updated as AppNoteNode)
+            : n;
+        });
+        const newZones = (diagram.data.zones || []).map((n) => {
+          const updated = nodeMap.get(n.id);
+          return updated && updated.type === "zone"
+            ? (updated as AppZoneNode)
+            : n;
+        });
 
         return updateDiagramsWithMap(state.diagrams, (diagrams) =>
           diagrams.map((d) =>
             d.id === state.selectedDiagramId
               ? {
                   ...d,
-                  data: { 
-                    ...d.data, 
+                  data: {
+                    ...d.data,
                     nodes: newNodes,
                     notes: newNotes,
-                    zones: newZones
+                    zones: newZones,
                   },
                   updatedAt: new Date(),
                 }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
@@ -987,7 +1079,11 @@ export const useStore = create(
     pasteNodes: (position) => {
       set((state) => {
         const { clipboard, diagrams, selectedDiagramId } = state;
-        if (!clipboard || clipboard.length === 0 || !selectedDiagramId) {
+        if (
+          !clipboard ||
+          clipboard.length === 0 ||
+          selectedDiagramId === null
+        ) {
           return state;
         }
 
@@ -995,14 +1091,14 @@ export const useStore = create(
         if (!diagram) return state;
 
         const existingLabels = new Set(
-          diagram.data.nodes.map((n) => n.data.label)
+          diagram.data.nodes.map((n) => n.data.label),
         );
 
         const newNodes: AppNode[] = [];
         const newNotes: AppNoteNode[] = [];
 
         clipboard.forEach((node, index) => {
-          const newNodeId = `${node.type}-${+new Date()}-${index}`;
+          const newNodeId = createRuntimeSafeNodeId(node.type, index);
           const newPosition = {
             x: position.x + index * 20,
             y: position.y + index * 20,
@@ -1048,12 +1144,14 @@ export const useStore = create(
           updatedAt: new Date(),
         };
 
-        set({ clipboard: null });
+        const updatedDiagrams = diagrams.map((d) =>
+          d.id === selectedDiagramId ? updatedDiagram : d,
+        );
 
         return {
-          diagrams: diagrams.map((d) =>
-            d.id === selectedDiagramId ? updatedDiagram : d
-          ),
+          diagrams: updatedDiagrams,
+          diagramsMap: createDiagramsMap(updatedDiagrams),
+          clipboard: null,
           // Clear the cursor position after paste
           lastCursorPosition: null,
         };
@@ -1067,7 +1165,10 @@ export const useStore = create(
     },
     reorganizeTables: () => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
 
         const tables = diagram.data.nodes || [];
@@ -1078,7 +1179,7 @@ export const useStore = create(
         const organizedTables = organizeTablesByRelationshipsWithZones(
           tables,
           relationships,
-          zones
+          zones,
         );
 
         return updateDiagramsWithMap(state.diagrams, (diagrams) =>
@@ -1089,14 +1190,17 @@ export const useStore = create(
                   data: { ...d.data, nodes: organizedTables },
                   updatedAt: new Date(),
                 }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
     toggleLock: () => {
       set((state) => {
-        const diagram = getDiagramById(state.diagramsMap, state.selectedDiagramId);
+        const diagram = getDiagramById(
+          state.diagramsMap,
+          state.selectedDiagramId,
+        );
         if (!diagram) return state;
 
         const currentLockState = diagram.data.isLocked ?? false;
@@ -1110,12 +1214,12 @@ export const useStore = create(
                   data: { ...d.data, isLocked: newLockState },
                   updatedAt: new Date(),
                 }
-              : d
-          )
+              : d,
+          ),
         );
       });
     },
-  }))
+  })),
 );
 
 useStore.subscribe(
@@ -1129,5 +1233,5 @@ useStore.subscribe(
       debouncedSave(state.diagrams, state.selectedDiagramId);
     }
   },
-  { equalityFn: shallow }
+  { equalityFn: shallow },
 );

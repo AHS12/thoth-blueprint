@@ -127,8 +127,6 @@ const DiagramEditor = forwardRef(
     const isLocked = useMemo(() => diagram?.data.isLocked ?? false, [diagram?.data.isLocked]);
 
     // Create Maps for efficient lookups
-    const nodesMap = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes]);
-    const notesMap = useMemo(() => new Map(notes.map(note => [note.id, note])), [notes]);
     const zonesMap = useMemo(() => new Map(zones.map(zone => [zone.id, zone])), [zones]);
 
     const edgeTypes = useMemo(() => ({ custom: CustomEdge }), []);
@@ -140,33 +138,48 @@ const DiagramEditor = forwardRef(
     }, [deleteNodes]);
 
     const handleTableCopy = useCallback((ids: string[]) => {
+      const { diagramsMap: latestDiagramsMap, selectedDiagramId: latestSelectedDiagramId } = useStore.getState();
+      if (latestSelectedDiagramId === null) return;
+
+      const activeDiagram = latestDiagramsMap.get(latestSelectedDiagramId);
+      if (!activeDiagram) return;
+
+      const tableMap = new Map((activeDiagram.data.nodes || []).map((node) => [node.id, node]));
       const nodesToCopy = ids
-        .map((id) => nodesMap.get(id))
+        .map((id) => tableMap.get(id))
         .filter((node): node is AppNode => Boolean(node) && !node?.data.isDeleted);
 
       if (nodesToCopy.length === 0) return;
 
       copyNodes(nodesToCopy);
       showSuccess(`${nodesToCopy.length} item(s) copied to clipboard.`);
-    }, [nodesMap, copyNodes]);
+    }, [copyNodes]);
 
     const handleNoteUpdate = useCallback((id: string, data: Partial<import('@/lib/types').NoteNodeData>) => {
-      const note = notesMap.get(id);
+      const { diagramsMap: latestDiagramsMap, selectedDiagramId: latestSelectedDiagramId } = useStore.getState();
+      if (latestSelectedDiagramId === null) return;
+
+      const activeDiagram = latestDiagramsMap.get(latestSelectedDiagramId);
+      const note = activeDiagram?.data.notes?.find((n) => n.id === id);
       if (note) {
         updateNode({ ...note, data: { ...note.data, ...data } });
       }
-    }, [notesMap, updateNode]);
+    }, [updateNode]);
 
     const handleNoteDelete = useCallback((ids: string[]) => {
       deleteNodes(ids);
     }, [deleteNodes]);
 
     const handleZoneUpdate = useCallback((id: string, data: Partial<import('@/lib/types').ZoneNodeData>) => {
-      const zone = zonesMap.get(id);
+      const { diagramsMap: latestDiagramsMap, selectedDiagramId: latestSelectedDiagramId } = useStore.getState();
+      if (latestSelectedDiagramId === null) return;
+
+      const activeDiagram = latestDiagramsMap.get(latestSelectedDiagramId);
+      const zone = activeDiagram?.data.zones?.find((z) => z.id === id);
       if (zone) {
         updateNode({ ...zone, data: { ...zone.data, ...data } });
       }
-    }, [zonesMap, updateNode]);
+    }, [updateNode]);
 
     const handleZoneDelete = useCallback((ids: string[]) => {
       deleteNodes(ids);
@@ -180,18 +193,32 @@ const DiagramEditor = forwardRef(
     }, [addNode]);
 
     const onCreateZoneAtPosition = useCallback((position: { x: number; y: number }) => {
-      if (!diagram) return;
-      const visibleZones = diagram?.data?.zones || [];
+      const { diagramsMap: latestDiagramsMap, selectedDiagramId: latestSelectedDiagramId } = useStore.getState();
+      if (latestSelectedDiagramId === null) return;
+
+      const activeDiagram = latestDiagramsMap.get(latestSelectedDiagramId);
+      if (!activeDiagram) return;
+
+      const visibleZones = activeDiagram.data.zones || [];
       const zoneName = `New Zone ${visibleZones.length + 1}`;
       const newZone: AppZoneNode = {
         id: `zone-${+new Date()}`, type: 'zone', position, width: 300, height: 300, zIndex: -1, data: { name: zoneName },
       };
       addNode(newZone);
-    }, [addNode, diagram]);
+    }, [addNode]);
 
     const onCreateTableAtPosition = useCallback((position: { x: number; y: number }) => {
-      if (!diagram) return;
-      const visibleNodes = diagram.data.nodes.filter((n: AppNode) => !n.data.isDeleted) || [];
+      const {
+        diagramsMap: latestDiagramsMap,
+        selectedDiagramId: latestSelectedDiagramId,
+        settings: latestSettings,
+      } = useStore.getState();
+      if (latestSelectedDiagramId === null) return;
+
+      const activeDiagram = latestDiagramsMap.get(latestSelectedDiagramId);
+      if (!activeDiagram) return;
+
+      const visibleNodes = (activeDiagram.data.nodes || []).filter((n: AppNode) => !n.data.isDeleted);
       const tableName = `new_table_${visibleNodes.length + 1}`;
       const defaultPosition = { x: position.x - 144, y: position.y - 50 };
       const canvasDimensions = getCanvasDimensions();
@@ -204,7 +231,7 @@ const DiagramEditor = forwardRef(
       } : undefined;
 
       let finalPosition = defaultPosition;
-      if (!settings.allowTableOverlapDuringCreation) {
+      if (!latestSettings.allowTableOverlapDuringCreation) {
         finalPosition = findNonOverlappingPosition(visibleNodes, defaultPosition, DEFAULT_TABLE_WIDTH, DEFAULT_TABLE_HEIGHT, DEFAULT_NODE_SPACING, viewportBounds);
       }
 
@@ -220,7 +247,7 @@ const DiagramEditor = forwardRef(
         },
       };
       addNode(newNode);
-    }, [diagram, addNode, settings.allowTableOverlapDuringCreation]);
+    }, [addNode]);
 
     // Memoize nodeTypes with callbacks to prevent recreation
     const memoizedNodeTypes = useMemo((): NodeTypes => ({
@@ -302,6 +329,10 @@ const DiagramEditor = forwardRef(
 
     const onEdgeMouseEnter = useCallback((_: React.MouseEvent, edge: Edge) => setHoveredEdgeId(edge.id), []);
     const onEdgeMouseLeave = useCallback(() => setHoveredEdgeId(null), []);
+    const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+      setSelectedEdgeId(edge.id);
+      setSelectedNodeId(null);
+    }, [setSelectedEdgeId, setSelectedNodeId]);
 
     const processedEdges = useMemo((): ProcessedEdge[] => {
       return edges.map((edge) => ({
@@ -351,6 +382,15 @@ const DiagramEditor = forwardRef(
 
     const onNodeDrag = useCallback((_: React.MouseEvent, node: ProcessedNode) => {
       if (dragRef.current && dragRef.current.zoneId === node.id) {
+        const { diagramsMap: latestDiagramsMap, selectedDiagramId: latestSelectedDiagramId } = useStore.getState();
+        if (latestSelectedDiagramId === null) return;
+
+        const activeDiagram = latestDiagramsMap.get(latestSelectedDiagramId);
+        if (!activeDiagram) return;
+
+        const currentNodesMap = new Map((activeDiagram.data.nodes || []).map((n) => [n.id, n]));
+        const currentNotesMap = new Map((activeDiagram.data.notes || []).map((n) => [n.id, n]));
+
         const dx = node.position.x - dragRef.current.initialZonePos.x;
         const dy = node.position.y - dragRef.current.initialZonePos.y;
 
@@ -358,8 +398,8 @@ const DiagramEditor = forwardRef(
 
         dragRef.current.childNodes.forEach(child => {
           let originalNode: AppNode | AppNoteNode | undefined;
-          if (child.type === 'table') originalNode = nodesMap.get(child.id);
-          else if (child.type === 'note') originalNode = notesMap.get(child.id);
+          if (child.type === 'table') originalNode = currentNodesMap.get(child.id);
+          else if (child.type === 'note') originalNode = currentNotesMap.get(child.id);
 
           if (originalNode) {
             nodesToUpdate.push({
@@ -376,7 +416,7 @@ const DiagramEditor = forwardRef(
           batchUpdateNodes(nodesToUpdate as AppNode[]);
         }
       }
-    }, [nodesMap, notesMap, batchUpdateNodes]);
+    }, [batchUpdateNodes]);
 
     const onNodeDragStop = useCallback(() => {
       dragRef.current = null;
@@ -394,6 +434,14 @@ const DiagramEditor = forwardRef(
     const onConnect: OnConnect = useCallback((connection: Connection) => {
       const { source, target, sourceHandle, targetHandle } = connection;
       if (!source || !target || !sourceHandle || !targetHandle) return;
+
+      const { diagramsMap: latestDiagramsMap, selectedDiagramId: latestSelectedDiagramId } = useStore.getState();
+      if (latestSelectedDiagramId === null) return;
+
+      const activeDiagram = latestDiagramsMap.get(latestSelectedDiagramId);
+      if (!activeDiagram) return;
+
+      const nodesMap = new Map((activeDiagram.data.nodes || []).map((n) => [n.id, n]));
 
       const sourceNode = nodesMap.get(source);
       const targetNode = nodesMap.get(target);
@@ -431,7 +479,7 @@ const DiagramEditor = forwardRef(
         data: { relationship: relationshipTypes[1]?.value || DbRelationship.ONE_TO_MANY },
       };
       addEdgeToStore(newEdge);
-    }, [nodesMap, edges, addEdgeToStore]);
+    }, [edges, addEdgeToStore]);
 
     const onInit = useCallback((instance: ReactFlowInstance<ProcessedNode, ProcessedEdge>) => {
       rfInstanceRef.current = instance;
@@ -524,10 +572,6 @@ const DiagramEditor = forwardRef(
       // Process nodes to set draggable property based on zone locking
       const processedNodes = visibleNodes.map(node => ({
         ...node,
-        data: {
-          ...node.data,
-          onDelete: handleTableDelete,
-        },
         draggable: !isLocked && !isNodeInLockedZone(node, zonesWithCallbacks)
       }));
 
@@ -546,7 +590,7 @@ const DiagramEditor = forwardRef(
       }));
 
       return [...processedNodes, ...processedNotes, ...processedZones];
-    }, [visibleNodes, notesWithCallbacks, zonesWithCallbacks, isLocked, handleTableDelete]);
+    }, [visibleNodes, notesWithCallbacks, zonesWithCallbacks, isLocked]);
 
     const onBeforeDelete = async ({ nodes }: { nodes: ProcessedNode[]; edges: ProcessedEdge[] }) => {
       if (nodes.length > 0) {
@@ -590,6 +634,7 @@ const DiagramEditor = forwardRef(
               onInit={onInit}
               onEdgeMouseEnter={onEdgeMouseEnter}
               onEdgeMouseLeave={onEdgeMouseLeave}
+              onEdgeClick={onEdgeClick}
               onPaneContextMenu={onPaneContextMenu}
               onPaneMouseMove={onPaneMouseMove}
               onViewportChange={handleViewportChange}
