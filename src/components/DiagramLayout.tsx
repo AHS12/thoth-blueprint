@@ -75,6 +75,7 @@ export function DiagramLayout({
                 size="icon"
                 variant="outline"
                 onClick={() => setIsSidebarOpen(true)}
+                data-tour="editor-open-sidebar"
               >
                 <Menu className="h-5 w-5" />
               </Button>
@@ -86,6 +87,7 @@ export function DiagramLayout({
                   size="icon"
                   variant="outline"
                   onClick={handleOpenSidebar}
+                  data-tour="editor-open-sidebar"
                 >
                   <Menu className="h-5 w-5" />
                 </Button>

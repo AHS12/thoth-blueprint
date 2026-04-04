@@ -41,6 +41,7 @@ interface EditorMenubarProps {
   onViewShortcuts: () => void;
   onViewAbout: () => void;
   onViewWhatsNew: () => void;
+  onViewHelpCenter: () => void;
 }
 
 export default function EditorMenubar({
@@ -54,6 +55,7 @@ export default function EditorMenubar({
   onViewShortcuts,
   onViewAbout,
   onViewWhatsNew,
+  onViewHelpCenter,
 }: EditorMenubarProps) {
   const selectedDiagramId = useStore((state) => state.selectedDiagramId);
   const diagramsMap = useStore((state) => state.diagramsMap);
@@ -101,7 +103,7 @@ export default function EditorMenubar({
   return (
     <Menubar className="rounded-none border-none bg-transparent">
       <MenubarMenu>
-        <MenubarTrigger className="px-2">File</MenubarTrigger>
+        <MenubarTrigger className="px-2" data-tour="editor-file-menu">File</MenubarTrigger>
         <MenubarContent>
           <MenubarItem onClick={onBackToGallery}>
             Back to Gallery
@@ -136,7 +138,7 @@ export default function EditorMenubar({
         </MenubarContent>
       </MenubarMenu>
       <MenubarMenu>
-        <MenubarTrigger className="px-2">Edit</MenubarTrigger>
+        <MenubarTrigger className="px-2" data-tour="editor-edit-menu">Edit</MenubarTrigger>
         <MenubarContent>
           <MenubarItem onClick={undoDelete} disabled={isLocked}>
             Undo Delete Table <MenubarShortcut>{CtrlKey} + {KeyboardShortcuts.UNDO_TABLE_DELETE.toUpperCase()}</MenubarShortcut>
@@ -239,8 +241,9 @@ export default function EditorMenubar({
         </MenubarContent>
       </MenubarMenu>
       <MenubarMenu>
-        <MenubarTrigger className="px-2">Help</MenubarTrigger>
+        <MenubarTrigger className="px-2" data-tour="editor-help-menu">Help</MenubarTrigger>
         <MenubarContent>
+          <MenubarItem onClick={onViewHelpCenter}>Help Center</MenubarItem>
           <MenubarItem onClick={onViewAbout}>About</MenubarItem>
           <MenubarItem onClick={onViewWhatsNew}>What's New</MenubarItem>
           <MenubarItem onClick={onViewShortcuts}>

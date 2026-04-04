@@ -113,10 +113,10 @@ const DiagramEditor = forwardRef(
     );
     const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
     const [isReorganizeDialogOpen, setIsReorganizeDialogOpen] = useState(false);
-  const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { theme } = useTheme();
-  const clickPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const [isSpacePressed, setIsSpacePressed] = useState(false);
+    const reactFlowWrapper = useRef<HTMLDivElement>(null);
+    const { theme } = useTheme();
+    const clickPositionRef = useRef<{ x: number; y: number } | null>(null);
+    const [isSpacePressed, setIsSpacePressed] = useState(false);
 
     const nodes = useMemo(() => diagram?.data.nodes || [], [diagram?.data.nodes]);
     const edges = useMemo(() => diagram?.data.edges || [], [diagram?.data.edges]);
@@ -404,7 +404,7 @@ const DiagramEditor = forwardRef(
         sourceHandle,
         targetHandle
       );
-      
+
       if (existingEdge) {
         showError("This relationship already exists.");
         return;
@@ -419,9 +419,9 @@ const DiagramEditor = forwardRef(
       addEdgeToStore(newEdge);
     }, [nodesMap, edges, addEdgeToStore]);
 
-  const onInit = useCallback((instance: ReactFlowInstance<ProcessedNode, ProcessedEdge>) => {
-    rfInstanceRef.current = instance;
-    setRfInstance(instance);
+    const onInit = useCallback((instance: ReactFlowInstance<ProcessedNode, ProcessedEdge>) => {
+      rfInstanceRef.current = instance;
+      setRfInstance(instance);
 
       // Restore viewport if rememberLastPosition is enabled and viewport is available
       if (settings.rememberLastPosition && diagram?.data.viewport) {
@@ -430,7 +430,7 @@ const DiagramEditor = forwardRef(
       } else {
         instance.fitView({ duration: 200 });
       }
-  }, [setRfInstance, diagram?.data.viewport, settings.rememberLastPosition]);
+    }, [setRfInstance, diagram?.data.viewport, settings.rememberLastPosition]);
 
 
 
@@ -582,16 +582,16 @@ const DiagramEditor = forwardRef(
               onlyRenderVisibleElements={onlyRenderVisibleElements}
             >
               <Controls showInteractive={false}>
-                <ControlButton onClick={handleLockChange} title={isLocked ? "Unlock" : "Lock"}>
+                <ControlButton onClick={handleLockChange} title={isLocked ? "Unlock" : "Lock"} data-tour="editor-control-lock">
                   {isLocked ? <IoLockClosedOutline size={18} /> : <IoLockOpenOutline size={18} />}
                 </ControlButton>
-                <ControlButton onClick={handleSnapToGridChange} title={"Snap To Grid"}>
+                <ControlButton onClick={handleSnapToGridChange} title={"Snap To Grid"} data-tour="editor-control-snap">
                   {settings.snapToGrid ? <Grid2x2Check size={18} /> : <Magnet size={18} />}
                 </ControlButton>
                 <ControlButton onClick={() => updateSettings({ enableFreePanning: !settings.enableFreePanning })} title={settings.enableFreePanning ? "Disable Free Panning" : "Enable Free Panning"}>
                   {settings.enableFreePanning ? <Move size={18} /> : <Pointer size={18} />}
                 </ControlButton>
-                <ControlButton onClick={handleReorganizeClick} title={"Reorganize Tables"} disabled={isLocked}>
+                <ControlButton onClick={handleReorganizeClick} title={"Reorganize Tables"} disabled={isLocked} data-tour="editor-control-reorganize">
                   <LayoutGrid size={18} />
                 </ControlButton>
               </Controls>

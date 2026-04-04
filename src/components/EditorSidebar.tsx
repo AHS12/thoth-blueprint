@@ -1,14 +1,14 @@
+import { dbTypeDisplay } from "@/lib/db-types";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store/store";
+import { formatDistanceToNow } from "date-fns";
 import { GitCommitHorizontal, Plus, Table } from "lucide-react";
 import React, { useMemo, useState } from "react";
-import { formatDistanceToNow } from "date-fns";
 import EditorMenubar from "./EditorMenubar";
+import { DatabaseTypeIcon } from "./icons/DatabaseTypeIcon";
 import RelationshipsTab from "./RelationshipsTab";
 import TablesTab from "./TablesTab";
 import { Button } from "./ui/button";
-import { DatabaseTypeIcon } from "./icons/DatabaseTypeIcon";
-import { dbTypeDisplay } from "@/lib/db-types";
 
 interface EditorSidebarProps {
   onAddElement: () => void;
@@ -22,6 +22,7 @@ interface EditorSidebarProps {
   onViewShortcuts: () => void;
   onViewAbout: () => void;
   onViewWhatsNew: () => void;
+  onViewHelpCenter: () => void;
 }
 
 export default function EditorSidebar({
@@ -36,6 +37,7 @@ export default function EditorSidebar({
   onViewShortcuts,
   onViewAbout,
   onViewWhatsNew,
+  onViewHelpCenter,
 }: EditorSidebarProps) {
   const selectedDiagramId = useStore((state) => state.selectedDiagramId);
   const diagramsMap = useStore((state) => state.diagramsMap);
@@ -103,6 +105,7 @@ export default function EditorSidebar({
           onViewShortcuts={onViewShortcuts}
           onViewAbout={onViewAbout}
           onViewWhatsNew={onViewWhatsNew}
+          onViewHelpCenter={onViewHelpCenter}
         />
       </div>
 
@@ -171,6 +174,7 @@ export default function EditorSidebar({
             size="icon"
             onClick={onAddElement}
             disabled={isLocked}
+            data-tour="editor-add-element"
           >
             <Plus className="h-4 w-4" />
             <span className="sr-only">Add Element</span>
