@@ -60,7 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
   exportForeignKeyConstraint: true,
   checkpoints: {
     enabled: true,
-    intervalMinutes: 60,
+    intervalMinutes: 5,
     meaningfulChangeThreshold: 20,
     retentionHours: 40,
     maxCountPerDiagram: 50,
