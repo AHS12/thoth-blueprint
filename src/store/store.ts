@@ -1614,14 +1614,8 @@ useStore.subscribe(
     diagrams: state.diagrams,
     selectedDiagramId: state.selectedDiagramId,
     isLoading: state.isLoading,
-    settings: state.settings,
   }),
-  (
-    state: Pick<
-      StoreState,
-      "diagrams" | "selectedDiagramId" | "isLoading" | "settings"
-    >,
-  ) => {
+  (state: Pick<StoreState, "diagrams" | "selectedDiagramId" | "isLoading">) => {
     if (!state.isLoading) {
       debouncedSave(state.diagrams, state.selectedDiagramId);
     }

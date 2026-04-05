@@ -25,6 +25,7 @@ Thoth Blueprint is a free, powerful database design tool that allows you to visu
 ## Features
 
 - 🎨 **Visual Database Design** - Intuitive drag-and-drop interface for creating database schemas
+- 🧩 **Complete DBML Workflow** - Import DBML, edit/write DBML in a dedicated editor with diagram sync, and export back to DBML
 - 🔄 **Multiple Export Formats** - Export to SQL, DBML, JSON, SVG
 - 🚀 **Framework Migration Generation** - Generate migration files for Laravel, TypeORM, and Django
 - 🔧 **Offline First** - Work on your diagrams anytime, anywhere, with or without an internet connection
@@ -32,6 +33,7 @@ Thoth Blueprint is a free, powerful database design tool that allows you to visu
 - 🔐 **Your Data is Yours** - All your data is stored locally on your computer, ensuring complete privacy
 - 📱 **Progressive Web App** - Install as an app on your device for a native-like experience
 - 📝 **Notes & Zones** - Add notes and organize tables in zones for better diagram management
+- 💾 **Checkpoint** - Save and restore diagram snapshots so you can safely experiment and roll back changes
 - 🔒 **Zone Lock/Unlock** - Lock zones to prevent accidental modifications
 - 📋 **Copy/Paste** - Easily duplicate tables and elements
 - ⌨️ **Keyboard Shortcuts** - Speed up your workflow with keyboard shortcuts

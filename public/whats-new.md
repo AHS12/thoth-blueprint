@@ -1,3 +1,25 @@
+# What’s New in ThothBlueprint v0.0.10
+
+This release focuses on a more compact home page experience, improved checkpoint defaults, and a new DBML editing workflow.
+
+## Highlights
+
+- **Improved Compact Home Page:** Refined the home page layout to feel cleaner, tighter, and more space-efficient.
+- **Checkpoint Default Update:** Set automatic checkpoint interval default to **5 minutes** for safer recovery without manual setup.
+- **New DBML Editor:** Added a DBML editor tab with write/edit support and sync back to the visual diagram.
+
+## New & Improved
+
+- **Compact Home Page UI:** Reduced visual clutter and improved layout density for faster navigation in the home experience.
+- **5-Minute Checkpoint Baseline:** New projects now start with a practical default checkpoint interval to reduce risk of lost changes.
+- **DBML Round-Trip Editing:** You can now edit DBML directly and save to synchronize schema/table changes with the diagram canvas.
+
+## Bug Fixes
+
+- Fixed `pg_dump` import issue tracked in [Issue #44](https://github.com/AHS12/thoth-blueprint/issues/44).
+
+---
+
 # What’s New in ThothBlueprint v0.0.9
 
 This release focuses on onboarding experience, in-app guidance, and editor responsiveness improvements for larger diagrams.

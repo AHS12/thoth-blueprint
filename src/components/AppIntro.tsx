@@ -1,12 +1,18 @@
 export const AppIntro = () => {
   return (
-    <div className="flex flex-col items-center text-center">
-      <h2 className="text-xl md:text-2xl font-bold tracking-tight">ThothBlueprint</h2>
-      <div className="flex flex-row items-start gap-4 mt-4 text-left max-w-2xl">
-        <img src="/ThothBlueprint-icon.svg" alt="ThothBlueprint Logo" className="h-10 w-10 md:h-12 md:w-12 flex-shrink-0" />
-        <p className="text-muted-foreground text-sm md:text-base">
-          Visualize your database schema with our intuitive drag-and-drop editor. When you're done, export your design to SQL, DBML, JSON, SVG, or generate migration files for frameworks like Laravel, TypeORM, and Django. Get started by creating a new diagram.
-        </p>
+    <div className="rounded-xl border border-border/70 bg-card/30 p-3 md:p-4">
+      <div className="flex items-start gap-3 text-left sm:items-center">
+        <img
+          src="/ThothBlueprint-icon.svg"
+          alt="ThothBlueprint Logo"
+          className="mt-0.5 h-8 w-8 shrink-0 md:mt-0 md:h-10 md:w-10"
+        />
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold tracking-tight md:text-xl">ThothBlueprint</h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground md:text-sm">
+            Visualize your database schema with an intuitive drag-and-drop editor. Export to SQL, DBML, JSON, SVG, or generate migration files for Laravel, TypeORM, and Django.
+          </p>
+        </div>
       </div>
     </div>
   );

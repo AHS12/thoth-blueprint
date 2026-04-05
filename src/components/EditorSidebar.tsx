@@ -4,9 +4,10 @@ import { cn } from "@/lib/utils";
 import { useStore } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { formatDistanceToNow } from "date-fns";
-import { GitCommitHorizontal, History, Plus, Table } from "lucide-react";
-import React, { useMemo, useState } from "react";
+import { FileCode2, GitCommitHorizontal, History, Plus, Table } from "lucide-react";
+import React, { useMemo, useRef, useState } from "react";
 import { CheckpointHistoryDialog } from "./CheckpointHistoryDialog";
+import DbmlTab from "./DbmlTab";
 import EditorMenubar from "./EditorMenubar";
 import { DatabaseTypeIcon } from "./icons/DatabaseTypeIcon";
 import RelationshipsTab from "./RelationshipsTab";
@@ -63,6 +64,11 @@ export default function EditorSidebar({
   });
   const [isCheckpointHistoryOpen, setIsCheckpointHistoryOpen] = useState(false);
   const [checkpoints, setCheckpoints] = useState<DiagramCheckpoint[]>([]);
+  const [isDbmlDirty, setIsDbmlDirty] = useState(false);
+  const [hasOpenedDbmlTab, setHasOpenedDbmlTab] = useState(false);
+  const manualTabOverrideRef = useRef(false);
+  const previousSelectedNodeIdRef = useRef<string | null>(selectedNodeId);
+  const previousSelectedEdgeIdRef = useRef<string | null>(selectedEdgeId);
 
   const nodes = useMemo(
     () =>
@@ -124,17 +130,41 @@ export default function EditorSidebar({
 
   // Auto-switch tabs based on selection
   const handleTabChange = (value: string) => {
+    manualTabOverrideRef.current = true;
     setCurrentTab(value);
+    if (value === "dbml") {
+      setHasOpenedDbmlTab(true);
+    }
   };
 
   // Switch to appropriate tab when items are selected
   React.useEffect(() => {
-    if (selectedEdgeId && edges.some((e) => e.id === selectedEdgeId)) {
+    const selectionChanged =
+      previousSelectedNodeIdRef.current !== selectedNodeId ||
+      previousSelectedEdgeIdRef.current !== selectedEdgeId;
+
+    if (selectionChanged) {
+      manualTabOverrideRef.current = false;
+      previousSelectedNodeIdRef.current = selectedNodeId;
+      previousSelectedEdgeIdRef.current = selectedEdgeId;
+    }
+
+    if (manualTabOverrideRef.current) return;
+
+    const hasSelectedRelationship =
+      !!selectedEdgeId && edges.some((e) => e.id === selectedEdgeId);
+    const hasSelectedTable =
+      !!selectedNodeId && nodes.some((n) => n.id === selectedNodeId);
+
+    if (hasSelectedRelationship && currentTab !== "relationships") {
       setCurrentTab("relationships");
-    } else if (selectedNodeId && nodes.some((n) => n.id === selectedNodeId)) {
+      return;
+    }
+
+    if (hasSelectedTable && currentTab !== "tables") {
       setCurrentTab("tables");
     }
-  }, [selectedNodeId, selectedEdgeId, nodes, edges]);
+  }, [selectedNodeId, selectedEdgeId, nodes, edges, currentTab]);
 
   React.useEffect(() => {
     void refreshCheckpoints();
@@ -206,14 +236,14 @@ export default function EditorSidebar({
 
       {/* Tab Navigation */}
       <div className="flex-shrink-0 px-4 my-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-10 items-center rounded-md bg-muted p-1 text-muted-foreground flex-grow">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-10 min-w-0 flex-1 items-center rounded-md bg-muted p-1 text-muted-foreground">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => handleTabChange("tables")}
               className={cn(
-                "flex-1 relative h-8 rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                "flex-1 min-w-0 relative h-8 rounded-sm px-2 lg:px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
                 currentTab === "tables"
                   ? "bg-background text-foreground shadow-sm hover:bg-background"
                   : "hover:bg-muted-foreground/10"
@@ -222,14 +252,14 @@ export default function EditorSidebar({
               <Table className="h-4 w-4 mr-2" />
               <span className="hidden lg:inline">Tables</span>
               <span className="lg:hidden">Tbls</span>
-              <span>&nbsp;({nodes.length})</span>
+              <span className="hidden xl:inline">&nbsp;({nodes.length})</span>
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => handleTabChange("relationships")}
               className={cn(
-                "flex-1 relative h-8 rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                "flex-1 min-w-0 relative h-8 rounded-sm px-2 lg:px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
                 currentTab === "relationships"
                   ? "bg-background text-foreground shadow-sm hover:bg-background"
                   : "hover:bg-muted-foreground/10"
@@ -238,12 +268,30 @@ export default function EditorSidebar({
               <GitCommitHorizontal className="h-4 w-4 mr-2" />
               <span className="hidden lg:inline">Relations</span>
               <span className="lg:hidden">Rels</span>
-              <span>&nbsp;({edges.length})</span>
+              <span className="hidden xl:inline">&nbsp;({edges.length})</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleTabChange("dbml")}
+              className={cn(
+                "flex-1 min-w-0 relative h-8 rounded-sm px-2 lg:px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                currentTab === "dbml"
+                  ? "bg-background text-foreground shadow-sm hover:bg-background"
+                  : "hover:bg-muted-foreground/10"
+              )}
+            >
+              <FileCode2 className="h-4 w-4 mr-2" />
+              <span>DBML</span>
+              {isDbmlDirty && (
+                <span className="ml-2 h-2 w-2 rounded-full bg-amber-500" aria-label="DBML has unsaved changes" />
+              )}
             </Button>
           </div>
           <Button
             variant="outline"
             size="icon"
+            className="shrink-0"
             onClick={onAddElement}
             disabled={isLocked}
             data-tour="editor-add-element"
@@ -256,18 +304,27 @@ export default function EditorSidebar({
 
       {/* Tab Content - Only render active tab */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {currentTab === "tables" && (
+        <div className={cn("h-full", currentTab !== "tables" && "hidden")}>
           <TablesTab
             nodes={nodes}
             isLocked={isLocked}
           />
-        )}
-        {currentTab === "relationships" && (
+        </div>
+        <div className={cn("h-full", currentTab !== "relationships" && "hidden")}>
           <RelationshipsTab
             nodes={nodes}
             edges={edges}
           />
-        )}
+        </div>
+        <div className={cn("h-full", currentTab !== "dbml" && "hidden")}>
+          {hasOpenedDbmlTab && (
+            <DbmlTab
+              diagram={diagram}
+              isLocked={isLocked}
+              onDirtyChange={setIsDbmlDirty}
+            />
+          )}
+        </div>
       </div>
       <CheckpointHistoryDialog
         isOpen={isCheckpointHistoryOpen}
