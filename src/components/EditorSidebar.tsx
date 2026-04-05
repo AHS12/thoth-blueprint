@@ -65,6 +65,7 @@ export default function EditorSidebar({
   const [isCheckpointHistoryOpen, setIsCheckpointHistoryOpen] = useState(false);
   const [checkpoints, setCheckpoints] = useState<DiagramCheckpoint[]>([]);
   const [isDbmlDirty, setIsDbmlDirty] = useState(false);
+  const [hasOpenedDbmlTab, setHasOpenedDbmlTab] = useState(false);
   const manualTabOverrideRef = useRef(false);
   const previousSelectedNodeIdRef = useRef<string | null>(selectedNodeId);
   const previousSelectedEdgeIdRef = useRef<string | null>(selectedEdgeId);
@@ -131,6 +132,9 @@ export default function EditorSidebar({
   const handleTabChange = (value: string) => {
     manualTabOverrideRef.current = true;
     setCurrentTab(value);
+    if (value === "dbml") {
+      setHasOpenedDbmlTab(true);
+    }
   };
 
   // Switch to appropriate tab when items are selected
@@ -313,11 +317,13 @@ export default function EditorSidebar({
           />
         </div>
         <div className={cn("h-full", currentTab !== "dbml" && "hidden")}>
-          <DbmlTab
-            diagram={diagram}
-            isLocked={isLocked}
-            onDirtyChange={setIsDbmlDirty}
-          />
+          {hasOpenedDbmlTab && (
+            <DbmlTab
+              diagram={diagram}
+              isLocked={isLocked}
+              onDirtyChange={setIsDbmlDirty}
+            />
+          )}
         </div>
       </div>
       <CheckpointHistoryDialog
