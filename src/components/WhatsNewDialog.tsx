@@ -16,9 +16,13 @@ export function WhatsNewDialog({ isOpen, onOpenChange, markdown = "", onReload, 
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent
         className="
-          w-[calc(100vw-2rem)] sm:w-full
+          w-[calc(100vw-1rem)] sm:w-full
           sm:max-w-2xl md:max-w-3xl lg:max-w-4xl
-          max-h-[calc(100vh-6rem)]
+          top-[max(0.5rem,env(safe-area-inset-top))] translate-y-0
+          sm:top-[50%] sm:translate-y-[-50%]
+          max-h-[calc(100dvh-1rem-env(safe-area-inset-top))]
+          grid-rows-[auto,minmax(0,1fr),auto]
+          p-4 sm:p-6
         "
       >
         <DialogHeader>
@@ -30,17 +34,16 @@ export function WhatsNewDialog({ isOpen, onOpenChange, markdown = "", onReload, 
         {/* Scrollable content area for long release notes */}
         <div
           className="
-            overflow-y-auto no-scrollbar
-            max-h-[calc(100vh-15rem)]
+            min-h-0 overflow-y-auto no-scrollbar
             prose dark:prose-invert max-w-none
-            pr-2
+            pr-1 sm:pr-2
           "
         >
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {markdown}
           </ReactMarkdown>
         </div>
-        <DialogFooter>
+        <DialogFooter className="pb-[env(safe-area-inset-bottom)]">
           <div className="flex w-full flex-col gap-2 sm:flex-row">
             {onStartTour && (
               <Button

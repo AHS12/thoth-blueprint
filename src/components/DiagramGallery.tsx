@@ -107,6 +107,11 @@ export default function DiagramGallery({ onInstallAppRequest, onCheckForUpdate, 
 
   const { setTheme } = useTheme();
   const { isInstalled } = usePWA();
+  const topAnnouncement = null as null | {
+    id: string;
+    message: string;
+    ctaLabel?: string;
+  };
 
   const activeDiagrams = diagrams?.filter(d => !d.deletedAt);
   const trashedDiagrams = diagrams?.filter(d => d.deletedAt);
@@ -186,19 +191,26 @@ export default function DiagramGallery({ onInstallAppRequest, onCheckForUpdate, 
   // dbTypeDisplay moved to shared icon component
 
   return (
-    <div className="p-4 md:p-8 h-full w-full bg-background overflow-y-auto">
-      <div className="max-w-6xl mx-auto">
-        <div data-tour="gallery-intro">
+    <div className="h-full w-full overflow-y-auto bg-background p-3 md:p-6 xl:p-8">
+      <div className="mx-auto max-w-7xl">
+        {/* Reserved area for future dismissible announcement banner. */}
+        {topAnnouncement ? (
+          <div className="mb-3 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+            {topAnnouncement.message}
+          </div>
+        ) : null}
+
+        <div data-tour="gallery-intro" className="mb-3 md:mb-4">
           <AppIntro />
         </div>
 
-        <div className="my-6 md:my-8">
+        <div className="mb-4 md:mb-5">
           <Features />
         </div>
 
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 mt-8 md:mt-12">
+        <div className="mb-5 mt-4 flex flex-col items-start justify-between gap-3 md:mt-5 md:flex-row md:items-center">
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">My Diagrams</h1>
-          <div className="flex gap-2 items-center self-end md:self-center">
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-center lg:flex-nowrap">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" data-tour="gallery-settings">

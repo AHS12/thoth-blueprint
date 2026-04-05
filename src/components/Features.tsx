@@ -5,31 +5,34 @@ export const Features = () => {
     {
       icon: <WifiOff className="h-6 w-6 text-primary" />,
       title: "Offline First",
-      description: "Work on your diagrams anytime, anywhere, with or without an internet connection.",
+      description: "Design anywhere, online or offline.",
     },
     {
       icon: <InfinityIcon className="h-6 w-6 text-primary" />,
       title: "No Limits",
-      description: "Create and manage as many diagrams as you need, with no restrictions.",
+      description: "Create as many diagrams as you need.",
     },
     {
       icon: <ShieldCheck className="h-6 w-6 text-primary" />,
       title: "Your Data is Yours",
-      description: "All your data is stored locally on your computer, ensuring complete privacy.",
+      description: "Stored locally on your device for privacy.",
     },
   ];
 
   return (
     <div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 md:gap-2">
         {features.map((feature) => (
-          <div key={feature.title} className="flex flex-row items-center gap-4 text-left md:flex-col md:text-center p-2">
-            <div className="flex-shrink-0 p-2 bg-muted rounded-full">
+          <div
+            key={feature.title}
+            className="flex items-start gap-2 rounded-lg border border-border/70 bg-card/20 p-2.5 text-left"
+          >
+            <div className="shrink-0 rounded-full bg-muted p-1.5">
               {feature.icon}
             </div>
-            <div>
-              <h3 className="text-base font-semibold">{feature.title}</h3>
-              <p className="text-sm text-muted-foreground">{feature.description}</p>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold md:text-sm">{feature.title}</h3>
+              <p className="text-[11px] leading-snug text-muted-foreground md:text-xs">{feature.description}</p>
             </div>
           </div>
         ))}
