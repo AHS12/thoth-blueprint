@@ -106,6 +106,8 @@ export interface PartitionInfo {
 
 export interface TableNodeData extends Record<string, unknown> {
   label: string;
+  schema?: string;
+  qualifiedName?: string;
   columns: Column[];
   indices?: Index[];
   comment?: string;
@@ -146,6 +148,8 @@ export interface EdgeData extends Record<string, unknown> {
   targetColumns?: string[];
   onDelete?: string;
   onUpdate?: string;
+  deferrable?: boolean;
+  initiallyDeferred?: boolean;
   isComposite?: boolean;
   centerX?: number;
   centerY?: number;

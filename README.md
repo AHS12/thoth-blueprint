@@ -32,6 +32,7 @@ Thoth Blueprint is a free, powerful database design tool that allows you to visu
 - 🔐 **Your Data is Yours** - All your data is stored locally on your computer, ensuring complete privacy
 - 📱 **Progressive Web App** - Install as an app on your device for a native-like experience
 - 📝 **Notes & Zones** - Add notes and organize tables in zones for better diagram management
+- 💾 **Checkpoint** - Save and restore diagram snapshots so you can safely experiment and roll back changes
 - 🔒 **Zone Lock/Unlock** - Lock zones to prevent accidental modifications
 - 📋 **Copy/Paste** - Easily duplicate tables and elements
 - ⌨️ **Keyboard Shortcuts** - Speed up your workflow with keyboard shortcuts
