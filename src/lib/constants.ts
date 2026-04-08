@@ -57,6 +57,8 @@ export const DEFAULT_SETTINGS: Settings = {
   focusRelDuringSelection: false,
   allowTableOverlapDuringCreation: true,
   enableFreePanning: true,
+  experimentalPixiRenderer: false,
+  experimentalPixiAdaptiveLod: false,
   exportForeignKeyConstraint: true,
   checkpoints: {
     enabled: true,

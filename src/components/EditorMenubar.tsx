@@ -350,6 +350,18 @@ export default function EditorMenubar({
           >
             Export Foreign Key Constraint
           </MenubarCheckboxItem>
+          <MenubarCheckboxItem
+            checked={settings.experimentalPixiRenderer}
+            onCheckedChange={(checked) => updateSettings({ experimentalPixiRenderer: checked })}
+          >
+            Experimental Pixi Renderer
+          </MenubarCheckboxItem>
+          <MenubarCheckboxItem
+            checked={settings.experimentalPixiAdaptiveLod}
+            onCheckedChange={(checked) => updateSettings({ experimentalPixiAdaptiveLod: checked })}
+          >
+            Pixi Adaptive LOD
+          </MenubarCheckboxItem>
           <MenubarItem onClick={onCheckForUpdate}>
             Check for Updates
           </MenubarItem>

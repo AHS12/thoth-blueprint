@@ -162,6 +162,8 @@ export interface Settings {
   focusRelDuringSelection: boolean;
   allowTableOverlapDuringCreation: boolean;
   enableFreePanning: boolean;
+  experimentalPixiRenderer: boolean;
+  experimentalPixiAdaptiveLod: boolean;
   exportForeignKeyConstraint: boolean;
   checkpoints: CheckpointSettings;
 }

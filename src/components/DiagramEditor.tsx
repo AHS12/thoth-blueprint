@@ -26,7 +26,7 @@ import {
   type Viewport
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Clipboard, GitCommitHorizontal, Grid2x2Check, LayoutGrid, Magnet, Move, Plus, Pointer, SquareDashed, StickyNote } from "lucide-react";
+import { Clipboard, GitCommitHorizontal, Grid2x2Check, LayoutGrid, Magnet, Maximize, Minus, Move, Plus, Pointer, SquareDashed, StickyNote } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
   forwardRef,
@@ -42,6 +42,7 @@ import { useDebouncedCallback } from "use-debounce";
 import { useShallow } from "zustand/react/shallow";
 import CustomEdge from "./CustomEdge";
 import NoteNode from "./NoteNode";
+import PixiDiagramRenderer, { type PixiRendererApi } from "./PixiDiagramRenderer";
 import { ReorganizeWarningDialog } from "./ReorganizeWarningDialog";
 import TableNode from "./TableNode";
 import ZoneNode from "./ZoneNode";
@@ -118,7 +119,14 @@ const DiagramEditor = forwardRef(
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
     const { theme } = useTheme();
     const clickPositionRef = useRef<{ x: number; y: number } | null>(null);
+    const pixiFlowPositionRef = useRef<{ x: number; y: number } | null>(null);
+    const pixiApiRef = useRef<PixiRendererApi | null>(null);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
+    const [pixiContextTarget, setPixiContextTarget] = useState<{
+      nodeId: string | null;
+      edgeId: string | null;
+    }>({ nodeId: null, edgeId: null });
+    const useExperimentalPixiRenderer = settings.experimentalPixiRenderer;
 
     const nodes = useMemo(() => diagram?.data.nodes || [], [diagram?.data.nodes]);
     const edges = useMemo(() => diagram?.data.edges || [], [diagram?.data.edges]);
@@ -523,6 +531,7 @@ const DiagramEditor = forwardRef(
       const pane = reactFlowWrapper.current?.getBoundingClientRect();
       if (!pane) return;
       clickPositionRef.current = { x: event.clientX, y: event.clientY };
+      pixiFlowPositionRef.current = null;
       setLastCursorPosition({ x: event.clientX, y: event.clientY });
     }, [setLastCursorPosition]);
 
@@ -543,10 +552,34 @@ const DiagramEditor = forwardRef(
       setIsReorganizeDialogOpen(false);
     }, []);
 
+    const handlePixiZoomIn = useCallback(() => {
+      pixiApiRef.current?.zoomIn();
+    }, []);
+
+    const handlePixiZoomOut = useCallback(() => {
+      pixiApiRef.current?.zoomOut();
+    }, []);
+
+    const handlePixiFitView = useCallback(() => {
+      pixiApiRef.current?.fitView();
+    }, []);
+
     useImperativeHandle(ref, () => ({
       undoDelete,
       batchUpdateNodes,
     }));
+
+    const getContextFlowPosition = useCallback(() => {
+      if (pixiFlowPositionRef.current) {
+        return pixiFlowPositionRef.current;
+      }
+
+      if (clickPositionRef.current && rfInstanceRef.current) {
+        return rfInstanceRef.current.screenToFlowPosition(clickPositionRef.current);
+      }
+
+      return null;
+    }, []);
 
     const notesWithCallbacks = useMemo(() => notes.map(note => ({
       ...note,
@@ -592,6 +625,56 @@ const DiagramEditor = forwardRef(
       return [...processedNodes, ...processedNotes, ...processedZones];
     }, [visibleNodes, notesWithCallbacks, zonesWithCallbacks, isLocked]);
 
+    const combinedNodeMap = useMemo(
+      () => new Map(combinedNodes.map((node) => [node.id, node])),
+      [combinedNodes],
+    );
+
+    const tablesMap = useMemo(
+      () => new Map(nodes.map((node) => [node.id, node])),
+      [nodes],
+    );
+
+    const notesMap = useMemo(
+      () => new Map(notes.map((note) => [note.id, note])),
+      [notes],
+    );
+
+    const pixiMoveNode = useCallback((nodeId: string, position: { x: number; y: number }) => {
+      const node = combinedNodeMap.get(nodeId);
+      if (!node || !node.draggable) return;
+
+      const nextPosition = settings.snapToGrid
+        ? {
+          x: Math.round(position.x / 15) * 15,
+          y: Math.round(position.y / 15) * 15,
+        }
+        : position;
+
+      if (node.type === "table") {
+        const tableNode = tablesMap.get(nodeId);
+        if (!tableNode) return;
+        updateNode({ ...tableNode, position: nextPosition });
+        return;
+      }
+
+      if (node.type === "note") {
+        const noteNode = notesMap.get(nodeId);
+        if (!noteNode) return;
+        updateNode({ ...noteNode, position: nextPosition });
+        return;
+      }
+
+      const zoneNode = zonesMap.get(nodeId);
+      if (!zoneNode) return;
+      updateNode({ ...zoneNode, position: nextPosition });
+    }, [combinedNodeMap, notesMap, settings.snapToGrid, tablesMap, updateNode, zonesMap]);
+
+    const pixiContextNode = useMemo(
+      () => (pixiContextTarget.nodeId ? combinedNodeMap.get(pixiContextTarget.nodeId) : undefined),
+      [combinedNodeMap, pixiContextTarget.nodeId],
+    );
+
     const onBeforeDelete = async ({ nodes }: { nodes: ProcessedNode[]; edges: ProcessedEdge[] }) => {
       if (nodes.length > 0) {
         const tableNodes = nodes.filter(node => node.type === "table");
@@ -605,6 +688,287 @@ const DiagramEditor = forwardRef(
       }
       return true
     };
+
+    useEffect(() => {
+      if (useExperimentalPixiRenderer) {
+        rfInstanceRef.current = null;
+        setRfInstance(null);
+      }
+    }, [setRfInstance, useExperimentalPixiRenderer]);
+
+    if (useExperimentalPixiRenderer) {
+      return (
+        <div className="w-full h-full" ref={reactFlowWrapper}>
+          {(clipboard?.length || 0) > 0 && (
+            <div className="absolute right-4 top-4 z-[11] pointer-events-none">
+              <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 text-xs shadow-md">
+                <Clipboard className="h-3.5 w-3.5" />
+                <span>{clipboard?.length || 0} copied</span>
+              </div>
+            </div>
+          )}
+          <ContextMenu>
+            <ContextMenuTrigger>
+              <PixiDiagramRenderer
+                nodes={combinedNodes}
+                edges={processedEdges}
+                selectedNodeId={selectedNodeId}
+                selectedEdgeId={selectedEdgeId}
+                isLocked={isLocked}
+                {...(diagram?.data.viewport ? { initialViewport: diagram.data.viewport } : {})}
+                allowPanByDrag={settings.enableFreePanning || isSpacePressed}
+                adaptiveLod={settings.experimentalPixiAdaptiveLod}
+                onReady={(api) => {
+                  pixiApiRef.current = api;
+                }}
+                onSelectNode={(nodeId) => {
+                  const selectedNode = nodeId ? combinedNodeMap.get(nodeId) : undefined;
+                  setSelectedNodeId(selectedNode?.type === "table" ? nodeId : null);
+                  setSelectedEdgeId(null);
+                  setPixiContextTarget({ nodeId: null, edgeId: null });
+                }}
+                onSelectEdge={(edgeId) => {
+                  setSelectedEdgeId(edgeId);
+                  setSelectedNodeId(null);
+                  setPixiContextTarget({ nodeId: null, edgeId: null });
+                }}
+                onViewportChange={handleViewportChange}
+                onPointerMove={(position) => setLastCursorPosition(position)}
+                onNodeMove={pixiMoveNode}
+                onContextMenu={({ screen, world, nodeId, edgeId }) => {
+                  clickPositionRef.current = screen;
+                  pixiFlowPositionRef.current = world;
+                  setLastCursorPosition(screen);
+
+                  if (nodeId) {
+                    const rightClickedNode = combinedNodeMap.get(nodeId);
+                    setSelectedNodeId(rightClickedNode?.type === "table" ? nodeId : null);
+                    setSelectedEdgeId(null);
+                  } else if (edgeId) {
+                    setSelectedEdgeId(edgeId);
+                    setSelectedNodeId(null);
+                  } else {
+                    setSelectedNodeId(null);
+                    setSelectedEdgeId(null);
+                  }
+
+                  setPixiContextTarget({
+                    nodeId: nodeId ?? null,
+                    edgeId: edgeId ?? null,
+                  });
+                }}
+              />
+              <div className="absolute left-3 bottom-3 z-[12] flex flex-col overflow-hidden rounded-md border bg-background shadow-sm">
+                <button
+                  type="button"
+                  className="h-10 w-10 border-b flex items-center justify-center hover:bg-accent"
+                  title="Zoom In"
+                  onClick={handlePixiZoomIn}
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="h-10 w-10 border-b flex items-center justify-center hover:bg-accent"
+                  title="Zoom Out"
+                  onClick={handlePixiZoomOut}
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="h-10 w-10 border-b flex items-center justify-center hover:bg-accent"
+                  title="Fit View"
+                  onClick={handlePixiFitView}
+                >
+                  <Maximize className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="h-10 w-10 border-b flex items-center justify-center hover:bg-accent"
+                  title={isLocked ? "Unlock" : "Lock"}
+                  onClick={handleLockChange}
+                  data-tour="editor-control-lock"
+                >
+                  {isLocked ? <IoLockClosedOutline size={16} /> : <IoLockOpenOutline size={16} />}
+                </button>
+                <button
+                  type="button"
+                  className="h-10 w-10 border-b flex items-center justify-center hover:bg-accent"
+                  title="Snap To Grid"
+                  onClick={handleSnapToGridChange}
+                  data-tour="editor-control-snap"
+                >
+                  {settings.snapToGrid ? <Grid2x2Check size={16} /> : <Magnet size={16} />}
+                </button>
+                <button
+                  type="button"
+                  className="h-10 w-10 border-b flex items-center justify-center hover:bg-accent"
+                  title={settings.enableFreePanning ? "Disable Free Panning" : "Enable Free Panning"}
+                  onClick={() => updateSettings({ enableFreePanning: !settings.enableFreePanning })}
+                >
+                  {settings.enableFreePanning ? <Move size={16} /> : <Pointer size={16} />}
+                </button>
+                <button
+                  type="button"
+                  className="h-10 w-10 flex items-center justify-center hover:bg-accent disabled:opacity-50"
+                  title="Reorganize Tables"
+                  onClick={handleReorganizeClick}
+                  disabled={isLocked}
+                  data-tour="editor-control-reorganize"
+                >
+                  <LayoutGrid size={16} />
+                </button>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              {pixiContextNode?.type === "table" && (
+                <>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      handleTableCopy([pixiContextNode.id]);
+                    }}
+                    disabled={isLocked}
+                  >
+                    <Clipboard className="h-4 w-4 mr-2" /> Copy Table
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      handleTableDelete([pixiContextNode.id]);
+                    }}
+                    className="text-destructive focus:text-destructive"
+                    disabled={isLocked}
+                  >
+                    <SquareDashed className="h-4 w-4 mr-2" /> Delete Table
+                  </ContextMenuItem>
+                </>
+              )}
+
+              {pixiContextNode?.type === "note" && (
+                <ContextMenuItem
+                  onSelect={() => {
+                    handleNoteDelete([pixiContextNode.id]);
+                  }}
+                  className="text-destructive focus:text-destructive"
+                  disabled={isLocked}
+                >
+                  <SquareDashed className="h-4 w-4 mr-2" /> Delete Note
+                </ContextMenuItem>
+              )}
+
+              {pixiContextNode?.type === "zone" && (
+                <>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      handleZoneUpdate(pixiContextNode.id, {
+                        isLocked: !pixiContextNode.data.isLocked,
+                      });
+                    }}
+                  >
+                    {pixiContextNode.data.isLocked ? <IoLockOpenOutline size={16} /> : <IoLockClosedOutline size={16} />}
+                    <span className="ml-2">{pixiContextNode.data.isLocked ? "Unlock Zone" : "Lock Zone"}</span>
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const flowPosition = getContextFlowPosition();
+                      if (flowPosition) {
+                        onCreateTableAtPosition(flowPosition);
+                      }
+                    }}
+                    disabled={isLocked || Boolean(pixiContextNode.data.isLocked)}
+                  >
+                    <Plus className="h-4 w-4 mr-2" /> Add Table
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => { setIsAddRelationshipDialogOpen(true) }}
+                    disabled={Boolean(pixiContextNode.data.isLocked)}
+                  >
+                    <GitCommitHorizontal className="h-4 w-4 mr-2" /> Add Relationship
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const flowPosition = getContextFlowPosition();
+                      if (flowPosition) {
+                        onCreateNoteAtPosition(flowPosition);
+                      }
+                    }}
+                    disabled={isLocked || Boolean(pixiContextNode.data.isLocked)}
+                  >
+                    <StickyNote className="h-4 w-4 mr-2" /> Add Note
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      handleZoneDelete([pixiContextNode.id]);
+                    }}
+                    className="text-destructive focus:text-destructive"
+                    disabled={Boolean(pixiContextNode.data.isLocked)}
+                  >
+                    <SquareDashed className="h-4 w-4 mr-2" /> Delete Zone
+                  </ContextMenuItem>
+                </>
+              )}
+
+              {!pixiContextNode && (
+                <>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const flowPosition = getContextFlowPosition();
+                      if (flowPosition) {
+                        onCreateTableAtPosition(flowPosition);
+                      }
+                    }}
+                    disabled={isLocked}
+                  >
+                    <Plus className="h-4 w-4 mr-2" /> Add Table
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => { setIsAddRelationshipDialogOpen(true) }}
+                    disabled={isLocked}
+                  >
+                    <GitCommitHorizontal className="h-4 w-4 mr-2" /> Add Relationship
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const flowPosition = getContextFlowPosition();
+                      if (flowPosition) {
+                        onCreateNoteAtPosition(flowPosition);
+                      }
+                    }}
+                    disabled={isLocked}
+                  >
+                    <StickyNote className="h-4 w-4 mr-2" /> Add Note
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const flowPosition = getContextFlowPosition();
+                      if (flowPosition) {
+                        onCreateZoneAtPosition(flowPosition);
+                      }
+                    }}
+                    disabled={isLocked}
+                  >
+                    <SquareDashed className="h-4 w-4 mr-2" /> Add Zone
+                  </ContextMenuItem>
+                  {(clipboard?.length || 0) > 0 &&
+                    <ContextMenuItem
+                      onSelect={() => {
+                        const flowPosition = getContextFlowPosition();
+                        if (flowPosition) {
+                          pasteNodes(flowPosition);
+                        }
+                      }}
+                      disabled={isLocked || !clipboard || clipboard.length === 0}
+                    >
+                      <Clipboard className="h-4 w-4 mr-2" /> Paste {clipboard?.length || 0} Items
+                    </ContextMenuItem>
+                  }
+                </>
+              )}
+            </ContextMenuContent>
+          </ContextMenu>
+        </div>
+      );
+    }
 
     return (
       <div className="w-full h-full" ref={reactFlowWrapper}>
@@ -668,8 +1032,8 @@ const DiagramEditor = forwardRef(
           <ContextMenuContent>
             <ContextMenuItem
               onSelect={() => {
-                if (clickPositionRef.current && rfInstanceRef.current) {
-                  const flowPosition = rfInstanceRef.current.screenToFlowPosition(clickPositionRef.current);
+                const flowPosition = getContextFlowPosition();
+                if (flowPosition) {
                   onCreateTableAtPosition(flowPosition);
                 }
               }}
@@ -685,8 +1049,8 @@ const DiagramEditor = forwardRef(
             </ContextMenuItem>
             <ContextMenuItem
               onSelect={() => {
-                if (clickPositionRef.current && rfInstanceRef.current) {
-                  const flowPosition = rfInstanceRef.current.screenToFlowPosition(clickPositionRef.current);
+                const flowPosition = getContextFlowPosition();
+                if (flowPosition) {
                   onCreateNoteAtPosition(flowPosition);
                 }
               }}
@@ -696,8 +1060,8 @@ const DiagramEditor = forwardRef(
             </ContextMenuItem>
             <ContextMenuItem
               onSelect={() => {
-                if (clickPositionRef.current && rfInstanceRef.current) {
-                  const flowPosition = rfInstanceRef.current.screenToFlowPosition(clickPositionRef.current);
+                const flowPosition = getContextFlowPosition();
+                if (flowPosition) {
                   onCreateZoneAtPosition(flowPosition);
                 }
               }}
@@ -708,8 +1072,8 @@ const DiagramEditor = forwardRef(
             {(clipboard?.length || 0) > 0 &&
               <ContextMenuItem
                 onSelect={() => {
-                  if (clickPositionRef.current && rfInstanceRef.current) {
-                    const flowPosition = rfInstanceRef.current.screenToFlowPosition(clickPositionRef.current);
+                  const flowPosition = getContextFlowPosition();
+                  if (flowPosition) {
                     pasteNodes(flowPosition);
                   }
                 }}
