@@ -43,6 +43,8 @@ export default function EditorSidebar({
   onViewWhatsNew,
   onViewHelpCenter,
 }: EditorSidebarProps) {
+  type SidebarTabKey = "tables" | "relationships" | "dbml";
+
   const selectedDiagramId = useStore((state) => state.selectedDiagramId);
   const diagramsMap = useStore((state) => state.diagramsMap);
   const selectedNodeId = useStore((state) => state.selectedNodeId);
@@ -56,7 +58,7 @@ export default function EditorSidebar({
     [diagramsMap, selectedDiagramId]
   );
 
-  const [currentTab, setCurrentTab] = useState<string>(() => {
+  const [currentTab, setCurrentTab] = useState<SidebarTabKey>(() => {
     // Set initial tab based on what's selected
     if (selectedEdgeId) return "relationships";
     if (selectedNodeId) return "tables";
@@ -66,6 +68,8 @@ export default function EditorSidebar({
   const [checkpoints, setCheckpoints] = useState<DiagramCheckpoint[]>([]);
   const [isDbmlDirty, setIsDbmlDirty] = useState(false);
   const [hasOpenedDbmlTab, setHasOpenedDbmlTab] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(0);
+  const sidebarContainerRef = useRef<HTMLDivElement | null>(null);
   const manualTabOverrideRef = useRef(false);
   const previousSelectedNodeIdRef = useRef<string | null>(selectedNodeId);
   const previousSelectedEdgeIdRef = useRef<string | null>(selectedEdgeId);
@@ -129,13 +133,41 @@ export default function EditorSidebar({
   }, [createCheckpoint, refreshCheckpoints]);
 
   // Auto-switch tabs based on selection
-  const handleTabChange = (value: string) => {
+  const handleTabChange = (value: SidebarTabKey) => {
     manualTabOverrideRef.current = true;
     setCurrentTab(value);
     if (value === "dbml") {
       setHasOpenedDbmlTab(true);
     }
   };
+
+  const tabItems: Array<{
+    key: SidebarTabKey;
+    label: string;
+    shortLabel?: string;
+    count?: number;
+    icon: React.ReactNode;
+  }> = [
+      {
+        key: "tables",
+        label: "Tables",
+        shortLabel: "Tbls",
+        count: nodes.length,
+        icon: <Table className="h-4 w-4" />,
+      },
+      {
+        key: "relationships",
+        label: "Relations",
+        shortLabel: "Rels",
+        count: edges.length,
+        icon: <GitCommitHorizontal className="h-4 w-4" />,
+      },
+      {
+        key: "dbml",
+        label: "DBML",
+        icon: <FileCode2 className="h-4 w-4" />,
+      },
+    ];
 
   // Switch to appropriate tab when items are selected
   React.useEffect(() => {
@@ -177,10 +209,32 @@ export default function EditorSidebar({
     };
   }, [refreshCheckpoints]);
 
+  React.useEffect(() => {
+    const element = sidebarContainerRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setSidebarWidth(entry.contentRect.width);
+    });
+
+    observer.observe(element);
+    setSidebarWidth(element.getBoundingClientRect().width);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const showRowHeaderMeta = sidebarWidth >= 420;
+  const useLongTabLabels = sidebarWidth >= 420;
+  const showTabCounts = sidebarWidth >= 520;
+
   if (!diagram) return null;
 
   return (
-    <div className="h-full w-full flex flex-col bg-card" onContextMenu={(e) => e.preventDefault()}>
+    <div ref={sidebarContainerRef} className="h-full w-full flex flex-col bg-card" onContextMenu={(e) => e.preventDefault()}>
       {/* Header */}
       <div className="flex items-center border-b pl-2 flex-shrink-0">
         <img
@@ -205,19 +259,21 @@ export default function EditorSidebar({
 
       {/* Diagram Info */}
       <div className="p-2 flex-shrink-0 border-b">
-        <div className="px-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+        <div className={cn("px-2 flex gap-2", showRowHeaderMeta ? "flex-row items-center gap-3" : "flex-col")}>
           <div className="flex items-center gap-2">
             <DatabaseTypeIcon dbType={diagram.dbType} className="h-4 sm:h-5 w-auto" />
             <div className="leading-tight">
-              <h3 className="text-base sm:text-lg font-semibold tracking-tight truncate max-w-[16rem]">
+              <h3 className={cn("text-base sm:text-lg font-semibold tracking-tight truncate", showRowHeaderMeta && "max-w-[16rem]")}>
                 {diagram.name}
               </h3>
               <p className="text-[11px] sm:text-xs text-muted-foreground">{dbTypeDisplay[diagram.dbType]}</p>
             </div>
           </div>
-          <div className="sm:hidden px-2 text-[11px] text-muted-foreground">
-            Updated {formatDistanceToNow(new Date(diagram.updatedAt), { addSuffix: true })}
-          </div>
+          {!showRowHeaderMeta && (
+            <div className="px-2 text-[11px] text-muted-foreground">
+              Updated {formatDistanceToNow(new Date(diagram.updatedAt), { addSuffix: true })}
+            </div>
+          )}
         </div>
         <div className="mt-2 px-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] sm:text-xs text-muted-foreground">
           <span className="flex items-center whitespace-nowrap"><Table className="h-3 w-3 mr-1" /> {nodes.length} tables</span>
@@ -230,63 +286,39 @@ export default function EditorSidebar({
           >
             <History className="h-3 w-3 mr-1" /> {checkpoints.length} checkpoints
           </button>
-          <span className="hidden sm:inline whitespace-nowrap">Updated {formatDistanceToNow(new Date(diagram.updatedAt), { addSuffix: true })}</span>
+          {showRowHeaderMeta && (
+            <span className="whitespace-nowrap">Updated {formatDistanceToNow(new Date(diagram.updatedAt), { addSuffix: true })}</span>
+          )}
         </div>
       </div>
 
       {/* Tab Navigation */}
       <div className="flex-shrink-0 px-4 my-4">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-10 min-w-0 flex-1 items-center rounded-md bg-muted p-1 text-muted-foreground">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleTabChange("tables")}
-              className={cn(
-                "flex-1 min-w-0 relative h-8 rounded-sm px-2 lg:px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-                currentTab === "tables"
-                  ? "bg-background text-foreground shadow-sm hover:bg-background"
-                  : "hover:bg-muted-foreground/10"
-              )}
-            >
-              <Table className="h-4 w-4 mr-2" />
-              <span className="hidden lg:inline">Tables</span>
-              <span className="lg:hidden">Tbls</span>
-              <span className="hidden xl:inline">&nbsp;({nodes.length})</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleTabChange("relationships")}
-              className={cn(
-                "flex-1 min-w-0 relative h-8 rounded-sm px-2 lg:px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-                currentTab === "relationships"
-                  ? "bg-background text-foreground shadow-sm hover:bg-background"
-                  : "hover:bg-muted-foreground/10"
-              )}
-            >
-              <GitCommitHorizontal className="h-4 w-4 mr-2" />
-              <span className="hidden lg:inline">Relations</span>
-              <span className="lg:hidden">Rels</span>
-              <span className="hidden xl:inline">&nbsp;({edges.length})</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleTabChange("dbml")}
-              className={cn(
-                "flex-1 min-w-0 relative h-8 rounded-sm px-2 lg:px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-                currentTab === "dbml"
-                  ? "bg-background text-foreground shadow-sm hover:bg-background"
-                  : "hover:bg-muted-foreground/10"
-              )}
-            >
-              <FileCode2 className="h-4 w-4 mr-2" />
-              <span>DBML</span>
-              {isDbmlDirty && (
-                <span className="ml-2 h-2 w-2 rounded-full bg-amber-500" aria-label="DBML has unsaved changes" />
-              )}
-            </Button>
+          <div className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
+            <div className="inline-flex h-10 min-w-max items-center rounded-md bg-muted p-1 text-muted-foreground">
+              {tabItems.map((tab) => (
+                <Button
+                  key={tab.key}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleTabChange(tab.key)}
+                  className={cn(
+                    "relative h-8 shrink-0 whitespace-nowrap rounded-sm px-2 lg:px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                    currentTab === tab.key
+                      ? "bg-background text-foreground shadow-sm hover:bg-background"
+                      : "hover:bg-muted-foreground/10"
+                  )}
+                >
+                  <span className="mr-2">{tab.icon}</span>
+                  <span>{useLongTabLabels ? tab.label : (tab.shortLabel ?? tab.label)}</span>
+                  {showTabCounts && typeof tab.count === "number" && <span>&nbsp;({tab.count})</span>}
+                  {tab.key === "dbml" && isDbmlDirty && (
+                    <span className="ml-2 h-2 w-2 rounded-full bg-amber-500" aria-label="DBML has unsaved changes" />
+                  )}
+                </Button>
+              ))}
+            </div>
           </div>
           <Button
             variant="outline"
