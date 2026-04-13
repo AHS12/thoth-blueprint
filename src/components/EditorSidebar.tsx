@@ -52,6 +52,15 @@ export default function EditorSidebar({
   const listCheckpoints = useStore((state) => state.listCheckpoints);
   const restoreCheckpoint = useStore((state) => state.restoreCheckpoint);
   const createCheckpoint = useStore((state) => state.createCheckpoint);
+  const editorSidebarNavigateToken = useStore(
+    (state) => state.editorSidebarNavigateToken,
+  );
+  const editorSidebarNavigateTargetTab = useStore(
+    (state) => state.editorSidebarNavigateTargetTab,
+  );
+  const clearEditorSidebarNavigateTarget = useStore(
+    (state) => state.clearEditorSidebarNavigateTarget,
+  );
 
   const diagram = useMemo(() =>
     diagramsMap.get(selectedDiagramId || 0),
@@ -141,6 +150,20 @@ export default function EditorSidebar({
     }
   };
 
+  React.useEffect(() => {
+    if (!editorSidebarNavigateTargetTab) return;
+    manualTabOverrideRef.current = true;
+    setCurrentTab(editorSidebarNavigateTargetTab);
+    if (editorSidebarNavigateTargetTab === "dbml") {
+      setHasOpenedDbmlTab(true);
+    }
+    clearEditorSidebarNavigateTarget();
+  }, [
+    editorSidebarNavigateToken,
+    editorSidebarNavigateTargetTab,
+    clearEditorSidebarNavigateTarget,
+  ]);
+
   const tabItems: Array<{
     key: SidebarTabKey;
     label: string;
@@ -169,7 +192,6 @@ export default function EditorSidebar({
       },
     ];
 
-  // Switch to appropriate tab when items are selected
   React.useEffect(() => {
     const selectionChanged =
       previousSelectedNodeIdRef.current !== selectedNodeId ||
