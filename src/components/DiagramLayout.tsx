@@ -37,7 +37,7 @@ export function DiagramLayout({
     <>
       <div className="lg:hidden">
         <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-          <SheetContent side="left" className="p-0 w-[350px] sm:w-[400px] flex">
+          <SheetContent side="left" className="p-0 w-[min(94vw,400px)] flex">
             <SheetHeader className="sr-only">
               <SheetTitle>Sidebar</SheetTitle>
             </SheetHeader>
