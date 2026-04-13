@@ -13,6 +13,8 @@ import { type ImperativePanelHandle } from "react-resizable-panels";
 interface DiagramLayoutProps {
   sidebarContent: ReactNode;
   diagramContent: ReactNode;
+  /** Rendered above the diagram canvas (e.g. floating AI assistant). */
+  diagramOverlay?: ReactNode;
   isSidebarOpen: boolean;
   setIsSidebarOpen: (open: boolean) => void;
   handleOpenSidebar: () => void;
@@ -25,6 +27,7 @@ interface DiagramLayoutProps {
 export function DiagramLayout({
   sidebarContent,
   diagramContent,
+  diagramOverlay,
   isSidebarOpen,
   setIsSidebarOpen,
   handleOpenSidebar,
@@ -95,6 +98,7 @@ export function DiagramLayout({
             )}
 
             {diagramContent}
+            {diagramOverlay}
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>

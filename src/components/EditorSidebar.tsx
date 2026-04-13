@@ -4,9 +4,8 @@ import { cn } from "@/lib/utils";
 import { useStore } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { formatDistanceToNow } from "date-fns";
-import { FileCode2, GitCommitHorizontal, History, Plus, Sparkles, Table } from "lucide-react";
+import { FileCode2, GitCommitHorizontal, History, Plus, Table } from "lucide-react";
 import React, { useMemo, useRef, useState } from "react";
-import AiChatTab from "./AiChatTab";
 import { CheckpointHistoryDialog } from "./CheckpointHistoryDialog";
 import DbmlTab from "./DbmlTab";
 import EditorMenubar from "./EditorMenubar";
@@ -62,9 +61,6 @@ export default function EditorSidebar({
   const clearEditorSidebarNavigateTarget = useStore(
     (state) => state.clearEditorSidebarNavigateTarget,
   );
-  const aiChatTabSyncSuppressToken = useStore(
-    (state) => state.aiChatTabSyncSuppressToken,
-  );
 
   const diagram = useMemo(() =>
     diagramsMap.get(selectedDiagramId || 0),
@@ -86,7 +82,6 @@ export default function EditorSidebar({
   const manualTabOverrideRef = useRef(false);
   const previousSelectedNodeIdRef = useRef<string | null>(selectedNodeId);
   const previousSelectedEdgeIdRef = useRef<string | null>(selectedEdgeId);
-  const lastHandledAiChatSuppressTokenRef = useRef<number | null>(null);
 
   const nodes = useMemo(
     () =>
@@ -197,19 +192,7 @@ export default function EditorSidebar({
       },
     ];
 
-  // Switch to appropriate tab when items are selected (skip once after "Chat with AI" so we stay on AI).
   React.useEffect(() => {
-    const prevToken = lastHandledAiChatSuppressTokenRef.current;
-    if (prevToken === null) {
-      lastHandledAiChatSuppressTokenRef.current = aiChatTabSyncSuppressToken;
-    } else if (aiChatTabSyncSuppressToken > prevToken) {
-      lastHandledAiChatSuppressTokenRef.current = aiChatTabSyncSuppressToken;
-      previousSelectedNodeIdRef.current = selectedNodeId;
-      previousSelectedEdgeIdRef.current = selectedEdgeId;
-      manualTabOverrideRef.current = true;
-      return;
-    }
-
     const selectionChanged =
       previousSelectedNodeIdRef.current !== selectedNodeId ||
       previousSelectedEdgeIdRef.current !== selectedEdgeId;
@@ -235,14 +218,7 @@ export default function EditorSidebar({
     if (hasSelectedTable && currentTab !== "tables") {
       setCurrentTab("tables");
     }
-  }, [
-    aiChatTabSyncSuppressToken,
-    selectedNodeId,
-    selectedEdgeId,
-    nodes,
-    edges,
-    currentTab,
-  ]);
+  }, [selectedNodeId, selectedEdgeId, nodes, edges, currentTab]);
 
   React.useEffect(() => {
     void refreshCheckpoints();
@@ -402,9 +378,6 @@ export default function EditorSidebar({
               onDirtyChange={setIsDbmlDirty}
             />
           )}
-        </div>
-        <div className={cn("h-full", currentTab !== "ai" && "hidden")}>
-          <AiChatTab isLocked={isLocked} />
         </div>
       </div>
       <CheckpointHistoryDialog

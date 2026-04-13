@@ -44,12 +44,11 @@ export interface StoreState {
     | "tables"
     | "relationships"
     | "dbml"
-    | "ai"
     | null;
   /** Table node ids pinned from "Chat with AI" (additive); drives scope chips and diagram JSON. */
   aiChatPinnedTableIds: string[];
-  /** Incremented when opening AI from a table context menu so the sidebar stays on the AI tab. */
-  aiChatTabSyncSuppressToken: number;
+  /** Floating schema assistant panel over the diagram canvas. */
+  aiChatPanelOpen: boolean;
   settings: Settings;
   isLoading: boolean;
   clipboard: (AppNode | AppNoteNode | AppZoneNode)[] | null;
@@ -61,6 +60,7 @@ export interface StoreState {
   setSelectedNodeId: (id: string | null) => void;
   setSelectedEdgeId: (id: string | null) => void;
   focusAiChatForTableNode: (tableId: string) => void;
+  setAiChatPanelOpen: (open: boolean) => void;
   clearEditorSidebarNavigateTarget: () => void;
   clearAiChatPinnedTables: () => void;
   removeAiChatPinnedTable: (tableId: string) => void;
@@ -710,7 +710,7 @@ export const useStore = create<StoreState>()(
     editorSidebarNavigateToken: 0,
     editorSidebarNavigateTargetTab: null,
     aiChatPinnedTableIds: [],
-    aiChatTabSyncSuppressToken: 0,
+    aiChatPanelOpen: false,
     settings: DEFAULT_SETTINGS,
     isLoading: true,
     clipboard: null,
@@ -769,6 +769,7 @@ export const useStore = create<StoreState>()(
         selectedNodeId: null,
         selectedEdgeId: null,
         aiChatPinnedTableIds: [],
+        aiChatPanelOpen: false,
       }),
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
     setSelectedEdgeId: (id) => set({ selectedEdgeId: id }),
@@ -781,11 +782,10 @@ export const useStore = create<StoreState>()(
           selectedNodeId: tableId,
           selectedEdgeId: null,
           aiChatPinnedTableIds: ids,
-          aiChatTabSyncSuppressToken: s.aiChatTabSyncSuppressToken + 1,
-          editorSidebarNavigateToken: s.editorSidebarNavigateToken + 1,
-          editorSidebarNavigateTargetTab: "ai",
+          aiChatPanelOpen: true,
         };
       }),
+    setAiChatPanelOpen: (open) => set({ aiChatPanelOpen: open }),
     clearEditorSidebarNavigateTarget: () =>
       set({ editorSidebarNavigateTargetTab: null }),
     clearAiChatPinnedTables: () => set({ aiChatPinnedTableIds: [] }),

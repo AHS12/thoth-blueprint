@@ -20,6 +20,7 @@ import { showError, showSuccess } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import {
   Bot,
+  CircleHelp,
   Loader2,
   Lock,
   SendHorizontal,
@@ -35,6 +36,7 @@ import { useShallow } from "zustand/react/shallow";
 import { GeminiKeyModal } from "./GeminiKeyModal";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { ScrollArea } from "./ui/scroll-area";
 import { Textarea } from "./ui/textarea";
 
@@ -175,7 +177,15 @@ function AiChatThinkingIndicator() {
   );
 }
 
-export default function AiChatTab({ isLocked }: { isLocked: boolean }) {
+export default function AiChatTab({
+  isLocked,
+  onRequestClose,
+  variant = "sidebar",
+}: {
+  isLocked: boolean;
+  onRequestClose?: () => void;
+  variant?: "sidebar" | "floating";
+}) {
   const apiKeyRef = useRef<string | null>(null);
   const chatScrollEndRef = useRef<HTMLDivElement>(null);
   const [keyModalOpen, setKeyModalOpen] = useState(false);
@@ -493,6 +503,90 @@ ${contextJson}`;
       "Describe changes to the pinned tables and their related tables…";
   }
 
+  const messageList = (
+    <div className="space-y-4 p-4 pb-2">
+      {messages.length === 0 && !sending ? (
+        <div className="rounded-2xl border border-dashed bg-muted/20 px-4 py-10 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/80 text-muted-foreground">
+            <Bot className="h-6 w-6" />
+          </div>
+          <p className="text-sm font-medium text-foreground">
+            Describe what to add or change
+          </p>
+          <p className="mx-auto mt-1 max-w-[240px] text-xs text-muted-foreground leading-relaxed">
+            For example: add a{" "}
+            <span className="font-mono text-[11px]">users</span> table with id
+            and email, or link{" "}
+            <span className="font-mono text-[11px]">orders</span> to{" "}
+            <span className="font-mono text-[11px]">users</span>.
+          </p>
+          {!storedKeyPresent && (
+            <Button
+              type="button"
+              size="sm"
+              className="mt-4"
+              onClick={() => setKeyModalOpen(true)}
+            >
+              Add API key
+            </Button>
+          )}
+        </div>
+      ) : (
+        <>
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              className={cn(
+                "flex gap-2.5",
+                msg.role === "user" ? "flex-row-reverse" : "flex-row",
+              )}
+            >
+              <div
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {msg.role === "user" ? (
+                  <User className="h-4 w-4" />
+                ) : (
+                  <Bot className="h-4 w-4" />
+                )}
+              </div>
+              <div
+                className={cn(
+                  "rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
+                  variant === "floating"
+                    ? "max-w-[min(100%,26rem)]"
+                    : "max-w-[min(100%,20rem)]",
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground rounded-tr-md"
+                    : "border bg-card rounded-tl-md prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2",
+                )}
+              >
+                {msg.role === "model" ? (
+                  <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
+                ) : (
+                  <p className="whitespace-pre-wrap break-words leading-relaxed">
+                    {msg.content}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+          {sending && <AiChatThinkingIndicator />}
+          <div
+            ref={chatScrollEndRef}
+            className="h-px w-full shrink-0"
+            aria-hidden
+          />
+        </>
+      )}
+    </div>
+  );
+
   return (
     <>
       <GeminiKeyModal
@@ -506,145 +600,193 @@ ${contextJson}`;
       />
 
       <div className="flex h-full min-h-0 flex-col">
-        <div className="shrink-0 border-b bg-gradient-to-b from-primary/[0.06] to-transparent px-4 py-3">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
-              <Sparkles className="h-5 w-5" aria-hidden />
-            </div>
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold tracking-tight">
+        {variant === "floating" ? (
+          <>
+            <div className="shrink-0 border-b bg-gradient-to-b from-primary/[0.06] to-transparent px-2 py-2 sm:px-3">
+              <div className="flex min-w-0 items-center gap-1">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+                  <Sparkles className="h-4 w-4" aria-hidden />
+                </div>
+                <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
                   Schema assistant
                 </h2>
                 <Badge
                   variant={keyStatus.variant}
-                  className={cn("font-normal", keyStatus.className)}
+                  className={cn(
+                    "shrink-0 px-1.5 py-0 text-[10px] font-normal",
+                    keyStatus.className,
+                  )}
                 >
                   {keyStatus.label}
                 </Badge>
-                <Badge
-                  variant="outline"
-                  className="max-w-[14rem] truncate border-border/80 font-mono text-[10px] font-normal text-muted-foreground"
-                  title={GEMINI_DIAGRAM_MODEL}
-                  aria-label={`AI model: ${GEMINI_DIAGRAM_MODEL}`}
-                >
-                  {GEMINI_DIAGRAM_MODEL}
-                </Badge>
-              </div>
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Powered by Google Gemini. After you unlock once, you stay signed in for
-                this tab until you lock or close it. Diagram data is sent with
-                each message.
-              </p>
-              <div className="flex flex-wrap gap-2 pt-0.5">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground"
+                      aria-label="Privacy, disclaimers, and data"
+                    >
+                      <CircleHelp className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    side="bottom"
+                    className="w-80 max-w-[min(22rem,calc(100vw-2rem))] space-y-3 text-xs"
+                  >
+                    <div>
+                      <p className="mb-1 font-medium text-foreground">Model</p>
+                      <p
+                        className="break-all font-mono text-[10px] text-muted-foreground"
+                        title={GEMINI_DIAGRAM_MODEL}
+                      >
+                        {GEMINI_DIAGRAM_MODEL}
+                      </p>
+                    </div>
+                    <p className="leading-relaxed text-muted-foreground">
+                      Powered by Google Gemini. After you unlock once, you stay
+                      signed in for this session until you lock or close the
+                      browser tab. Each message includes a snapshot of your
+                      diagram so the assistant can suggest schema changes.
+                    </p>
+                    <div className="border-t pt-3">
+                      <p className="mb-1.5 font-medium text-foreground">
+                        Accuracy
+                      </p>
+                      <p className="leading-relaxed text-muted-foreground">
+                        AI can make mistakes—review suggestions and diagram
+                        changes before relying on them.
+                      </p>
+                    </div>
+                    <div>
+                      <p className="mb-1.5 font-medium text-foreground">
+                        Chat history
+                      </p>
+                      <p className="leading-relaxed text-muted-foreground">
+                        History is saved only on this device for this diagram;
+                        it is not synced and may be lost if you clear site
+                        data.
+                      </p>
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <Button
                   type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
                   onClick={() => setKeyModalOpen(true)}
+                  aria-label="API key settings"
                 >
-                  <Settings2 className="h-3.5 w-3.5" />
-                  API key
+                  <Settings2 className="h-4 w-4" />
                 </Button>
-                {storedKeyPresent && !sessionUnlocked && (
+                {storedKeyPresent && !sessionUnlocked ? (
                   <Button
                     type="button"
-                    size="sm"
-                    className="h-8 gap-1.5 text-xs"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-amber-600 dark:text-amber-400"
                     onClick={() => setKeyModalOpen(true)}
+                    aria-label="Unlock API key"
                   >
-                    <Lock className="h-3.5 w-3.5" />
-                    Unlock
+                    <Lock className="h-4 w-4" />
                   </Button>
-                )}
+                ) : null}
+                {onRequestClose ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                    onClick={onRequestClose}
+                    aria-label="Close assistant"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                ) : null}
               </div>
             </div>
-          </div>
-        </div>
-
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-4 p-4 pb-2">
-            {messages.length === 0 && !sending ? (
-              <div className="rounded-2xl border border-dashed bg-muted/20 px-4 py-10 text-center">
-                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/80 text-muted-foreground">
-                  <Bot className="h-6 w-6" />
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              {messageList}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="shrink-0 border-b bg-gradient-to-b from-primary/[0.06] to-transparent px-4 py-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                  <Sparkles className="h-5 w-5" aria-hidden />
                 </div>
-                <p className="text-sm font-medium text-foreground">
-                  Describe what to add or change
-                </p>
-                <p className="mx-auto mt-1 max-w-[240px] text-xs text-muted-foreground leading-relaxed">
-                  For example: add a{" "}
-                  <span className="font-mono text-[11px]">users</span> table
-                  with id and email, or link{" "}
-                  <span className="font-mono text-[11px]">orders</span> to{" "}
-                  <span className="font-mono text-[11px]">users</span>.
-                </p>
-                {!storedKeyPresent && (
+                <div className="min-w-0 flex-1 space-y-2 pr-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-semibold tracking-tight">
+                      Schema assistant
+                    </h2>
+                    <Badge
+                      variant={keyStatus.variant}
+                      className={cn("font-normal", keyStatus.className)}
+                    >
+                      {keyStatus.label}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="max-w-[14rem] truncate border-border/80 font-mono text-[10px] font-normal text-muted-foreground"
+                      title={GEMINI_DIAGRAM_MODEL}
+                      aria-label={`AI model: ${GEMINI_DIAGRAM_MODEL}`}
+                    >
+                      {GEMINI_DIAGRAM_MODEL}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    Powered by Google Gemini. After you unlock once, you stay
+                    signed in for this tab until you lock or close it. Diagram
+                    data is sent with each message.
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-0.5">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs"
+                      onClick={() => setKeyModalOpen(true)}
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                      API key
+                    </Button>
+                    {storedKeyPresent && !sessionUnlocked && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs"
+                        onClick={() => setKeyModalOpen(true)}
+                      >
+                        <Lock className="h-3.5 w-3.5" />
+                        Unlock
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {onRequestClose ? (
                   <Button
                     type="button"
-                    size="sm"
-                    className="mt-4"
-                    onClick={() => setKeyModalOpen(true)}
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+                    onClick={onRequestClose}
+                    aria-label="Close assistant"
                   >
-                    Add API key
+                    <X className="h-4 w-4" />
                   </Button>
-                )}
+                ) : null}
               </div>
-            ) : (
-              <>
-                {messages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      "flex gap-2.5",
-                      msg.role === "user" ? "flex-row-reverse" : "flex-row",
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {msg.role === "user" ? (
-                        <User className="h-4 w-4" />
-                      ) : (
-                        <Bot className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div
-                      className={cn(
-                        "max-w-[min(100%,20rem)] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground rounded-tr-md"
-                          : "border bg-card rounded-tl-md prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2",
-                      )}
-                    >
-                      {msg.role === "model" ? (
-                        <Markdown remarkPlugins={[remarkGfm]}>
-                          {msg.content}
-                        </Markdown>
-                      ) : (
-                        <p className="whitespace-pre-wrap break-words leading-relaxed">
-                          {msg.content}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {sending && <AiChatThinkingIndicator />}
-                <div
-                  ref={chatScrollEndRef}
-                  className="h-px w-full shrink-0"
-                  aria-hidden
-                />
-              </>
-            )}
-          </div>
-        </ScrollArea>
+            </div>
+            <ScrollArea className="h-0 min-h-0 flex-1">
+              {messageList}
+            </ScrollArea>
+          </>
+        )}
 
         <div className="shrink-0 border-t bg-card/80 p-3 backdrop-blur-sm">
           {pinnedTablesForChips.length > 0 && (

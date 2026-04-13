@@ -17,6 +17,7 @@ import { AddRelationshipDialog } from "./AddRelationshipDialog";
 import { AddTableDialog } from "./AddTableDialog";
 import { AddZoneDialog } from "./AddZoneDialog";
 import { CheckpointMigrationDialog } from "./CheckpointMigrationDialog";
+import { AiChatFloating } from "./AiChatFloating";
 import DiagramEditor from "./DiagramEditor";
 import DiagramGallery from "./DiagramGallery";
 import { DiagramLayout } from "./DiagramLayout";
@@ -634,6 +635,7 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
         <DiagramLayout
           sidebarContent={sidebarContent}
           diagramContent={<DiagramEditor setRfInstance={setRfInstance} />}
+          diagramOverlay={<AiChatFloating />}
           isSidebarOpen={isSidebarOpen}
           setIsSidebarOpen={setIsSidebarOpen}
           handleOpenSidebar={handleOpenSidebar}
