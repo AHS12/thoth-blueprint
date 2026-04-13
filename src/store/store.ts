@@ -17,6 +17,8 @@ import {
   type Diagram,
   type DiagramCheckpoint,
 } from "@/lib/types";
+import { aiPatchSchema } from "@/lib/ai/diagramPatchSchema";
+import { simulateAiPatch } from "@/lib/ai/simulateAiPatch";
 import { findExistingRelationship } from "@/lib/utils";
 import {
   applyEdgeChanges,
@@ -35,6 +37,19 @@ export interface StoreState {
   selectedDiagramId: number | null;
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
+  /** Bumped to switch the editor sidebar tab (does not open or expand the sidebar). */
+  editorSidebarNavigateToken: number;
+  /** Sidebar tab to show when `editorSidebarNavigateToken` changes; cleared after consumption. */
+  editorSidebarNavigateTargetTab:
+    | "tables"
+    | "relationships"
+    | "dbml"
+    | "ai"
+    | null;
+  /** Table node ids pinned from "Chat with AI" (additive); drives scope chips and diagram JSON. */
+  aiChatPinnedTableIds: string[];
+  /** Incremented when opening AI from a table context menu so the sidebar stays on the AI tab. */
+  aiChatTabSyncSuppressToken: number;
   settings: Settings;
   isLoading: boolean;
   clipboard: (AppNode | AppNoteNode | AppZoneNode)[] | null;
@@ -45,6 +60,11 @@ export interface StoreState {
   setSelectedDiagramId: (id: number | null) => void;
   setSelectedNodeId: (id: string | null) => void;
   setSelectedEdgeId: (id: string | null) => void;
+  focusAiChatForTableNode: (tableId: string) => void;
+  clearEditorSidebarNavigateTarget: () => void;
+  clearAiChatPinnedTables: () => void;
+  removeAiChatPinnedTable: (tableId: string) => void;
+  setAiChatPinnedTableIds: (ids: string[]) => void;
   setLastCursorPosition: (position: { x: number; y: number } | null) => void;
   updateSettings: (settings: Partial<Settings>) => void;
   createDiagram: (
@@ -69,6 +89,11 @@ export interface StoreState {
   updateEdge: (edge: AppEdge) => void;
   deleteEdge: (edgeId: string) => void;
   addNode: (node: AppNode | AppNoteNode | AppZoneNode) => void;
+  applyAiDiagramOperations: (
+    raw: unknown,
+  ) =>
+    | { ok: true; summary?: string }
+    | { ok: false; error: string };
   undoDelete: () => void;
   batchUpdateNodes: (nodes: (AppNode | AppNoteNode | AppZoneNode)[]) => void;
   copyNodes: (nodes: (AppNode | AppNoteNode | AppZoneNode)[]) => void;
@@ -233,7 +258,12 @@ const debouncedSavePositions = debounce(
 const debouncedSaveFull = debounce(
   async (diagrams: Diagram[], selectedDiagramId: number | null) => {
     try {
-      await db.transaction("rw", db.diagrams, db.appState, async () => {
+      await db.transaction(
+        "rw",
+        db.diagrams,
+        db.appState,
+        db.aiChatSessions,
+        async () => {
         const allDbDiagramIds = (await db.diagrams
           .toCollection()
           .primaryKeys()) as number[];
@@ -249,6 +279,7 @@ const debouncedSaveFull = debounce(
           );
           if (idsToDelete.length > 0) {
             await db.diagrams.bulkDelete(idsToDelete);
+            await db.aiChatSessions.bulkDelete(idsToDelete);
           }
         }
 
@@ -264,7 +295,8 @@ const debouncedSaveFull = debounce(
         } else {
           await db.appState.delete("selectedDiagramId").catch(() => {});
         }
-      });
+        },
+      );
 
       previousDiagrams = diagrams;
       previousSelectedDiagramId = selectedDiagramId;
@@ -675,6 +707,10 @@ export const useStore = create<StoreState>()(
     selectedDiagramId: null,
     selectedNodeId: null,
     selectedEdgeId: null,
+    editorSidebarNavigateToken: 0,
+    editorSidebarNavigateTargetTab: null,
+    aiChatPinnedTableIds: [],
+    aiChatTabSyncSuppressToken: 0,
     settings: DEFAULT_SETTINGS,
     isLoading: true,
     clipboard: null,
@@ -732,9 +768,32 @@ export const useStore = create<StoreState>()(
         selectedDiagramId: id,
         selectedNodeId: null,
         selectedEdgeId: null,
+        aiChatPinnedTableIds: [],
       }),
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
     setSelectedEdgeId: (id) => set({ selectedEdgeId: id }),
+    focusAiChatForTableNode: (tableId) =>
+      set((s) => {
+        const ids = s.aiChatPinnedTableIds.includes(tableId)
+          ? s.aiChatPinnedTableIds
+          : [...s.aiChatPinnedTableIds, tableId];
+        return {
+          selectedNodeId: tableId,
+          selectedEdgeId: null,
+          aiChatPinnedTableIds: ids,
+          aiChatTabSyncSuppressToken: s.aiChatTabSyncSuppressToken + 1,
+          editorSidebarNavigateToken: s.editorSidebarNavigateToken + 1,
+          editorSidebarNavigateTargetTab: "ai",
+        };
+      }),
+    clearEditorSidebarNavigateTarget: () =>
+      set({ editorSidebarNavigateTargetTab: null }),
+    clearAiChatPinnedTables: () => set({ aiChatPinnedTableIds: [] }),
+    removeAiChatPinnedTable: (tableId) =>
+      set((s) => ({
+        aiChatPinnedTableIds: s.aiChatPinnedTableIds.filter((id) => id !== tableId),
+      })),
+    setAiChatPinnedTableIds: (ids) => set({ aiChatPinnedTableIds: ids }),
     setLastCursorPosition: (position) => set({ lastCursorPosition: position }),
     updateSettings: (newSettings) => {
       set((state) => {
@@ -1248,6 +1307,59 @@ export const useStore = create<StoreState>()(
           ),
         );
       });
+    },
+    applyAiDiagramOperations: (raw) => {
+      const state = get();
+      const diagram = getDiagramById(
+        state.diagramsMap,
+        state.selectedDiagramId,
+      );
+      if (!diagram?.id) {
+        return { ok: false, error: "No diagram selected." };
+      }
+      if (diagram.data.isLocked) {
+        return { ok: false, error: "Diagram is locked." };
+      }
+
+      const parsed = aiPatchSchema.safeParse(raw);
+      if (!parsed.success) {
+        const msg = parsed.error.issues.map((i) => i.message).join("; ");
+        return { ok: false, error: msg || "Invalid AI response format." };
+      }
+
+      try {
+        const { operations, summary } = parsed.data;
+        if (operations.length === 0) {
+          return summary !== undefined
+            ? { ok: true, summary }
+            : { ok: true };
+        }
+
+        const sim = simulateAiPatch(diagram.data, diagram.dbType, operations);
+        if (!sim.ok) {
+          return { ok: false, error: sim.error };
+        }
+
+        set((s) =>
+          updateDiagramsWithMap(s.diagrams, (diagrams) =>
+            diagrams.map((d) =>
+              d.id === s.selectedDiagramId
+                ? {
+                    ...d,
+                    data: sim.data,
+                    updatedAt: new Date(),
+                  }
+                : d,
+            ),
+          ),
+        );
+
+        return summary !== undefined ? { ok: true, summary } : { ok: true };
+      } catch (e) {
+        console.error("applyAiDiagramOperations:", e);
+        const msg = e instanceof Error ? e.message : String(e);
+        return { ok: false, error: msg };
+      }
     },
     undoDelete: () => {
       set((state) => {

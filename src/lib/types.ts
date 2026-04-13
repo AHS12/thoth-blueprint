@@ -42,6 +42,14 @@ export interface AppState {
   value: string | number;
 }
 
+export type AiChatMessage = { role: "user" | "model"; content: string };
+
+export interface AiChatSession {
+  diagramId: number;
+  messages: AiChatMessage[];
+  updatedAt: number;
+}
+
 export type CheckpointType = "automatic" | "manual" | "migration";
 
 export interface DiagramCheckpoint {

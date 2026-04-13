@@ -22,7 +22,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from "@xyflow/react";
-import { Copy, Key, MoreHorizontal, Trash2 } from "lucide-react";
+import { Copy, Key, MoreHorizontal, Sparkles, Trash2 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "./ui/button";
@@ -122,13 +122,15 @@ function TableNode({
   const prevColumnsRef = useRef(data.columns);
   const selectedNodeId = useStore((state) => state.selectedNodeId);
   const isSelected = selected || selectedNodeId === id;
-  const { selectedEdgeId, selectedDiagramId, diagramsMap } = useStore(
-    useShallow((state) => ({
-      selectedEdgeId: state.selectedEdgeId,
-      selectedDiagramId: state.selectedDiagramId,
-      diagramsMap: state.diagramsMap,
-    }))
-  );
+  const { selectedEdgeId, selectedDiagramId, diagramsMap, focusAiChatForTableNode } =
+    useStore(
+      useShallow((state) => ({
+        selectedEdgeId: state.selectedEdgeId,
+        selectedDiagramId: state.selectedDiagramId,
+        diagramsMap: state.diagramsMap,
+        focusAiChatForTableNode: state.focusAiChatForTableNode,
+      })),
+    );
   const edges = useMemo(
     () => (selectedDiagramId === null ? [] : diagramsMap.get(selectedDiagramId)?.data.edges || []),
     [selectedDiagramId, diagramsMap]
@@ -397,6 +399,9 @@ function TableNode({
       <ContextMenuContent>
         <ContextMenuItem onSelect={() => onCopy?.([id])}>
           <Copy className="h-4 w-4 mr-2" /> Copy Table
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => focusAiChatForTableNode(id)}>
+          <Sparkles className="h-4 w-4 mr-2" /> Chat with AI
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => onDelete?.([id])}

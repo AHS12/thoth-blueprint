@@ -4,8 +4,9 @@ import { cn } from "@/lib/utils";
 import { useStore } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { formatDistanceToNow } from "date-fns";
-import { FileCode2, GitCommitHorizontal, History, Plus, Table } from "lucide-react";
+import { FileCode2, GitCommitHorizontal, History, Plus, Sparkles, Table } from "lucide-react";
 import React, { useMemo, useRef, useState } from "react";
+import AiChatTab from "./AiChatTab";
 import { CheckpointHistoryDialog } from "./CheckpointHistoryDialog";
 import DbmlTab from "./DbmlTab";
 import EditorMenubar from "./EditorMenubar";
@@ -50,6 +51,18 @@ export default function EditorSidebar({
   const listCheckpoints = useStore((state) => state.listCheckpoints);
   const restoreCheckpoint = useStore((state) => state.restoreCheckpoint);
   const createCheckpoint = useStore((state) => state.createCheckpoint);
+  const editorSidebarNavigateToken = useStore(
+    (state) => state.editorSidebarNavigateToken,
+  );
+  const editorSidebarNavigateTargetTab = useStore(
+    (state) => state.editorSidebarNavigateTargetTab,
+  );
+  const clearEditorSidebarNavigateTarget = useStore(
+    (state) => state.clearEditorSidebarNavigateTarget,
+  );
+  const aiChatTabSyncSuppressToken = useStore(
+    (state) => state.aiChatTabSyncSuppressToken,
+  );
 
   const diagram = useMemo(() =>
     diagramsMap.get(selectedDiagramId || 0),
@@ -69,6 +82,7 @@ export default function EditorSidebar({
   const manualTabOverrideRef = useRef(false);
   const previousSelectedNodeIdRef = useRef<string | null>(selectedNodeId);
   const previousSelectedEdgeIdRef = useRef<string | null>(selectedEdgeId);
+  const lastHandledAiChatSuppressTokenRef = useRef<number | null>(null);
 
   const nodes = useMemo(
     () =>
@@ -137,8 +151,33 @@ export default function EditorSidebar({
     }
   };
 
-  // Switch to appropriate tab when items are selected
   React.useEffect(() => {
+    if (!editorSidebarNavigateTargetTab) return;
+    manualTabOverrideRef.current = true;
+    setCurrentTab(editorSidebarNavigateTargetTab);
+    if (editorSidebarNavigateTargetTab === "dbml") {
+      setHasOpenedDbmlTab(true);
+    }
+    clearEditorSidebarNavigateTarget();
+  }, [
+    editorSidebarNavigateToken,
+    editorSidebarNavigateTargetTab,
+    clearEditorSidebarNavigateTarget,
+  ]);
+
+  // Switch to appropriate tab when items are selected (skip once after "Chat with AI" so we stay on AI).
+  React.useEffect(() => {
+    const prevToken = lastHandledAiChatSuppressTokenRef.current;
+    if (prevToken === null) {
+      lastHandledAiChatSuppressTokenRef.current = aiChatTabSyncSuppressToken;
+    } else if (aiChatTabSyncSuppressToken > prevToken) {
+      lastHandledAiChatSuppressTokenRef.current = aiChatTabSyncSuppressToken;
+      previousSelectedNodeIdRef.current = selectedNodeId;
+      previousSelectedEdgeIdRef.current = selectedEdgeId;
+      manualTabOverrideRef.current = true;
+      return;
+    }
+
     const selectionChanged =
       previousSelectedNodeIdRef.current !== selectedNodeId ||
       previousSelectedEdgeIdRef.current !== selectedEdgeId;
@@ -164,7 +203,14 @@ export default function EditorSidebar({
     if (hasSelectedTable && currentTab !== "tables") {
       setCurrentTab("tables");
     }
-  }, [selectedNodeId, selectedEdgeId, nodes, edges, currentTab]);
+  }, [
+    aiChatTabSyncSuppressToken,
+    selectedNodeId,
+    selectedEdgeId,
+    nodes,
+    edges,
+    currentTab,
+  ]);
 
   React.useEffect(() => {
     void refreshCheckpoints();
@@ -287,6 +333,21 @@ export default function EditorSidebar({
                 <span className="ml-2 h-2 w-2 rounded-full bg-amber-500" aria-label="DBML has unsaved changes" />
               )}
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleTabChange("ai")}
+              className={cn(
+                "flex-1 min-w-0 relative h-8 rounded-sm px-2 lg:px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                currentTab === "ai"
+                  ? "bg-background text-foreground shadow-sm hover:bg-background"
+                  : "hover:bg-muted-foreground/10"
+              )}
+            >
+              <Sparkles className="h-4 w-4 mr-2 shrink-0" />
+              <span className="hidden lg:inline">AI</span>
+              <span className="lg:hidden">AI</span>
+            </Button>
           </div>
           <Button
             variant="outline"
@@ -324,6 +385,9 @@ export default function EditorSidebar({
               onDirtyChange={setIsDbmlDirty}
             />
           )}
+        </div>
+        <div className={cn("h-full", currentTab !== "ai" && "hidden")}>
+          <AiChatTab isLocked={isLocked} />
         </div>
       </div>
       <CheckpointHistoryDialog
