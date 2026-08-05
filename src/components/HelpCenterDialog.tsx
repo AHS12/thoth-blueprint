@@ -15,6 +15,7 @@ interface HelpCenterDialogProps {
     onStartTour: () => void;
     onViewShortcuts: () => void;
     onViewWhatsNew: () => void;
+    onCheckForUpdate: () => void;
 }
 
 export function HelpCenterDialog({
@@ -23,6 +24,7 @@ export function HelpCenterDialog({
     onStartTour,
     onViewShortcuts,
     onViewWhatsNew,
+    onCheckForUpdate,
 }: HelpCenterDialogProps) {
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -67,17 +69,27 @@ export function HelpCenterDialog({
                         <p className="mt-1 text-sm text-muted-foreground">
                             Existing users can quickly review release notes and then replay the tour for new capabilities.
                         </p>
-                        <Button
-                            className="mt-3"
-                            variant="outline"
-                            onClick={() => {
-                                onOpenChange(false);
-                                onViewWhatsNew();
-                            }}
-                        >
-                            <Sparkles className="mr-2 h-4 w-4" />
-                            Open What's New
-                        </Button>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    onOpenChange(false);
+                                    onViewWhatsNew();
+                                }}
+                            >
+                                <Sparkles className="mr-2 h-4 w-4" />
+                                Open What's New
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    onOpenChange(false);
+                                    onCheckForUpdate();
+                                }}
+                            >
+                                Check for Updates
+                            </Button>
+                        </div>
                     </section>
 
                     <section className="rounded-lg border p-4">
@@ -89,7 +101,7 @@ export function HelpCenterDialog({
                             <p>Help -&gt; Help Center: onboarding and guided flow.</p>
                             <p>Help -&gt; What's New: version highlights and upgrade notes.</p>
                             <p>Help -&gt; View Shortcuts: power-user commands for faster editing.</p>
-                            <p>Settings -&gt; Check for Updates: manually check for newer builds.</p>
+                            <p>Help -&gt; Check for Updates: manually check for newer builds.</p>
                         </div>
                     </section>
                 </div>

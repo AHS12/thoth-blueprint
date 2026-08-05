@@ -169,7 +169,7 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
     {
       id: "editor-help-menu",
       title: "Help Menu",
-      description: "Find the Help Center, What's New, shortcuts, and about info from here.",
+      description: "Find the Help Center, check for updates, shortcuts, and about info from here.",
       target: '[data-tour="editor-help-menu"]',
       placement: "bottom",
     },
@@ -680,6 +680,7 @@ export default function Layout({ onInstallAppRequest }: LayoutProps) {
         onStartTour={startProductTour}
         onViewShortcuts={() => setIsShortcutsDialogOpen(true)}
         onViewWhatsNew={openWhatsNew}
+        onCheckForUpdate={() => setIsUpdateDialogOpen(true)}
       />
       <WhatsNewDialog
         isOpen={isWhatsNewOpen}

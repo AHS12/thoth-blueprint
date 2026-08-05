@@ -353,9 +353,6 @@ export default function EditorMenubar({
           >
             Export Foreign Key Constraint
           </MenubarCheckboxItem>
-          <MenubarItem onClick={onCheckForUpdate}>
-            Check for Updates
-          </MenubarItem>
           {!isInstalled && (
             <MenubarItem onClick={onInstallAppRequest}>
               Install App
@@ -417,6 +414,7 @@ export default function EditorMenubar({
         <MenubarTrigger className="px-2" data-tour="editor-help-menu">Help</MenubarTrigger>
         <MenubarContent>
           <MenubarItem onClick={onViewHelpCenter}>Help Center</MenubarItem>
+          <MenubarItem onClick={onCheckForUpdate}>Check for Updates</MenubarItem>
           <MenubarItem onClick={onViewAbout}>About</MenubarItem>
           <MenubarItem onClick={onViewWhatsNew}>What's New</MenubarItem>
           <MenubarItem onClick={onViewShortcuts}>

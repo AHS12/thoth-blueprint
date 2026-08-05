@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 /** Default model for diagram patches; override if a model id stops working. */
-export const GEMINI_DIAGRAM_MODEL = "gemini-2.5-flash";
+export const GEMINI_DIAGRAM_MODEL = "gemini-flash-latest";
 
 export async function callGeminiDiagramAssistant(params: {
   apiKey: string;
