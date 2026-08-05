@@ -924,7 +924,7 @@ ${contextJson}`;
   }
 
   const messageList = (
-    <div className="space-y-4 p-4 pb-2">
+    <div className="min-w-0 space-y-4 p-4 pb-2">
       {messages.length === 0 && !sending ? (
         <div className="rounded-2xl border border-dashed bg-muted/20 px-4 py-10 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/80 text-muted-foreground">
@@ -977,13 +977,13 @@ ${contextJson}`;
               </div>
               <div
                 className={cn(
-                  "rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
+                  "min-w-0 max-w-full overflow-hidden rounded-2xl px-3.5 py-2.5 text-sm shadow-sm break-words [overflow-wrap:anywhere]",
                   variant === "floating"
                     ? "max-w-[min(100%,26rem)]"
                     : "max-w-[min(100%,20rem)]",
                   msg.role === "user"
                     ? "bg-primary text-primary-foreground rounded-tr-md"
-                    : "border bg-card rounded-tl-md prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2",
+                    : "border bg-card rounded-tl-md prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-pre:max-w-full prose-pre:overflow-x-auto prose-li:[overflow-wrap:anywhere]",
                 )}
               >
                 {msg.role === "model" ? (
@@ -1277,7 +1277,11 @@ ${contextJson}`;
               className="min-h-[44px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm shadow-none focus-visible:ring-0"
               rows={2}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
                   e.preventDefault();
                   void sendMessage();
                 }
@@ -1299,7 +1303,7 @@ ${contextJson}`;
             </Button>
           </div>
           <p className="mt-2 text-center text-[10px] text-muted-foreground">
-            ⌘/Ctrl + Enter to send · do not paste secrets
+            Enter to send · Shift + Enter for a new line · do not paste secrets
           </p>
         </div>
       </div>
