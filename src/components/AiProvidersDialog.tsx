@@ -5,7 +5,14 @@ import {
   saveAiKeyToSession,
   saveEncryptedAiKey,
 } from "@/lib/ai/aiCredentialStorage";
-import type { AiProviderId } from "@/lib/types";
+import type {
+  AiProviderId,
+  AiSettings,
+} from "@/lib/types";
+import {
+  LOCAL_AI_DEFAULT_URLS,
+  type LocalAiProviderId,
+} from "@/lib/ai/aiProviderTypes";
 import { showError, showSuccess } from "@/utils/toast";
 import { Check, ExternalLink, KeyRound, Lock, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type MutableRefObject } from "react";
@@ -24,30 +31,52 @@ import { Label } from "./ui/label";
 export interface AiCredentialStatus {
   stored: boolean;
   unlocked: boolean;
+  ready?: boolean;
 }
 
 export type AiCredentialStatuses = Record<AiProviderId, AiCredentialStatus>;
+export interface AiLocalConnectionStatus {
+  loading: boolean;
+  ready: boolean;
+  error: string | null;
+}
+export type AiLocalConnectionStatuses = Record<LocalAiProviderId, AiLocalConnectionStatus>;
 export type AiApiKeysRef = MutableRefObject<
   Record<AiProviderId, string | null>
 >;
 
 const PROVIDERS: Array<{
   id: AiProviderId;
+  kind: "cloud" | "local";
   name: string;
   description: string;
-  keyUrl: string;
+  keyUrl?: string;
 }> = [
   {
     id: "gemini",
+    kind: "cloud",
     name: "Google Gemini",
     description: "Direct access to Google Gemini models.",
     keyUrl: "https://aistudio.google.com/apikey",
   },
   {
     id: "openrouter",
+    kind: "cloud",
     name: "OpenRouter",
     description: "Choose from OpenRouter's model catalog.",
     keyUrl: "https://openrouter.ai/keys",
+  },
+  {
+    id: "ollama",
+    kind: "local",
+    name: "Ollama",
+    description: "Run models locally with Ollama.",
+  },
+  {
+    id: "lmstudio",
+    kind: "local",
+    name: "LM Studio",
+    description: "Run downloaded models locally with LM Studio.",
   },
 ];
 
@@ -57,6 +86,13 @@ interface AiProvidersDialogProps {
   apiKeysRef: AiApiKeysRef;
   statuses: AiCredentialStatuses;
   onStatusChange: (provider: AiProviderId, status: AiCredentialStatus) => void;
+  aiSettings: AiSettings;
+  onAiSettingsChange: (settings: Partial<AiSettings>) => void;
+  localConnectionStatuses: AiLocalConnectionStatuses;
+  onTestLocalProvider: (
+    provider: LocalAiProviderId,
+    baseUrl: string,
+  ) => Promise<void>;
 }
 
 export function AiProvidersDialog({
@@ -65,6 +101,10 @@ export function AiProvidersDialog({
   apiKeysRef,
   statuses,
   onStatusChange,
+  aiSettings,
+  onAiSettingsChange,
+  localConnectionStatuses,
+  onTestLocalProvider,
 }: AiProvidersDialogProps) {
   const [selectedProvider, setSelectedProvider] = useState<AiProviderId>(
     "gemini",
@@ -72,27 +112,63 @@ export function AiProvidersDialog({
   const [apiKey, setApiKey] = useState("");
   const [passphraseSave, setPassphraseSave] = useState("");
   const [passphraseUnlock, setPassphraseUnlock] = useState("");
+  const [localBaseUrl, setLocalBaseUrl] = useState("");
 
   const provider = useMemo(
     () => PROVIDERS.find((item) => item.id === selectedProvider) ?? PROVIDERS[0]!,
     [selectedProvider],
   );
   const status = statuses[selectedProvider];
+  const isLocal = provider.kind === "local";
+  const localProvider = isLocal ? (selectedProvider as LocalAiProviderId) : null;
+  const localStatus = localProvider
+    ? localConnectionStatuses[localProvider]
+    : null;
+
+  const getLocalBaseUrl = useCallback(
+    (id: LocalAiProviderId) =>
+      id === "ollama" ? aiSettings.ollamaBaseUrl : aiSettings.lmStudioBaseUrl,
+    [aiSettings.lmStudioBaseUrl, aiSettings.ollamaBaseUrl],
+  );
 
   useEffect(() => {
     if (!open) {
       setApiKey("");
       setPassphraseSave("");
       setPassphraseUnlock("");
+      setLocalBaseUrl("");
     }
   }, [open]);
+
+  useEffect(() => {
+    if (isLocal && localProvider) {
+      setLocalBaseUrl(getLocalBaseUrl(localProvider));
+    }
+  }, [getLocalBaseUrl, isLocal, localProvider]);
 
   const selectProvider = (next: AiProviderId) => {
     setSelectedProvider(next);
     setApiKey("");
     setPassphraseSave("");
     setPassphraseUnlock("");
+    if (next === "ollama" || next === "lmstudio") {
+      setLocalBaseUrl(getLocalBaseUrl(next));
+    } else {
+      setLocalBaseUrl("");
+    }
   };
+
+  const handleSaveLocal = useCallback(async () => {
+    if (!localProvider) return;
+    const fallback = LOCAL_AI_DEFAULT_URLS[localProvider];
+    const nextUrl = localBaseUrl.trim() || fallback;
+    onAiSettingsChange(
+      localProvider === "ollama"
+        ? { ollamaBaseUrl: nextUrl }
+        : { lmStudioBaseUrl: nextUrl },
+    );
+    await onTestLocalProvider(localProvider, nextUrl);
+  }, [localBaseUrl, localProvider, onAiSettingsChange, onTestLocalProvider]);
 
   const handleSave = useCallback(async () => {
     const key = apiKey.trim();
@@ -192,6 +268,10 @@ export function AiProvidersDialog({
           <div className="grid grid-cols-2 gap-2">
             {PROVIDERS.map((item) => {
               const itemStatus = statuses[item.id];
+              const itemLocalStatus =
+                item.kind === "local"
+                  ? localConnectionStatuses[item.id as LocalAiProviderId]
+                  : null;
               const active = item.id === selectedProvider;
               return (
                 <button
@@ -212,14 +292,18 @@ export function AiProvidersDialog({
                     {item.description}
                   </p>
                   <span className="mt-2 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                    {itemStatus.unlocked ? (
+                    {itemLocalStatus?.ready || itemStatus.unlocked ? (
                       <ShieldCheck className="h-3 w-3 text-emerald-600" />
-                    ) : itemStatus.stored ? (
+                    ) : itemLocalStatus?.error || itemStatus.stored ? (
                       <Lock className="h-3 w-3 text-amber-600" />
                     ) : (
                       <KeyRound className="h-3 w-3" />
                     )}
-                    {itemStatus.unlocked
+                    {itemLocalStatus?.ready
+                      ? "Connected"
+                      : itemLocalStatus?.error
+                        ? "Connection error"
+                        : itemStatus.unlocked
                       ? "Ready"
                       : itemStatus.stored
                         ? "Saved, locked"
@@ -233,20 +317,52 @@ export function AiProvidersDialog({
           <div className="space-y-4">
             <div>
               <h3 className="text-sm font-medium">{provider.name}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                <a
-                  href={provider.keyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
-                >
-                  Get an API key
-                  <ExternalLink className="h-3 w-3" aria-hidden />
-                </a>
-              </p>
+              {isLocal ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  No API key is required for local use.
+                </p>
+              ) : provider.keyUrl ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  <a
+                    href={provider.keyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
+                  >
+                    Get an API key
+                    <ExternalLink className="h-3 w-3" aria-hidden />
+                  </a>
+                </p>
+              ) : null}
             </div>
 
-            {!status.stored ? (
+            {isLocal ? (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor={`${selectedProvider}-url`}>Local server URL</Label>
+                  <Input
+                    id={`${selectedProvider}-url`}
+                    type="url"
+                    autoComplete="url"
+                    placeholder={
+                      localProvider ? LOCAL_AI_DEFAULT_URLS[localProvider] : "http://localhost:1234"
+                    }
+                    value={localBaseUrl}
+                    onChange={(event) => setLocalBaseUrl(event.target.value)}
+                  />
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {localProvider === "ollama"
+                      ? "Default: http://localhost:11434. Allow this app origin with OLLAMA_ORIGINS if needed."
+                      : "Default: http://localhost:1234. Enable CORS in LM Studio Developer settings."}
+                  </p>
+                </div>
+                {localStatus?.error ? (
+                  <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                    {localStatus.error}
+                  </p>
+                ) : null}
+              </div>
+            ) : !status.stored ? (
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor={`${selectedProvider}-key`}>API key</Label>
@@ -335,7 +451,15 @@ export function AiProvidersDialog({
             ) : null}
           </div>
           <div className="flex w-full justify-end gap-2 sm:w-auto">
-            {!status.stored ? (
+            {isLocal ? (
+              <Button
+                type="button"
+                disabled={localStatus?.loading}
+                onClick={() => void handleSaveLocal()}
+              >
+                {localStatus?.loading ? "Connecting..." : "Save & connect"}
+              </Button>
+            ) : !status.stored ? (
               <Button type="button" onClick={() => void handleSave()}>
                 Save & unlock
               </Button>

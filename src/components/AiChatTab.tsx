@@ -17,6 +17,11 @@ import {
   type OpenRouterModel,
 } from "@/lib/ai/openRouter";
 import {
+  callLocalDiagramAssistant,
+  listLocalAiModels,
+} from "@/lib/ai/localProviders";
+import type { AiModel, LocalAiProviderId } from "@/lib/ai/aiProviderTypes";
+import {
   loadAiKeyFromSession,
   hasEncryptedAiKey,
 } from "@/lib/ai/aiCredentialStorage";
@@ -44,6 +49,7 @@ import {
   AiProvidersDialog,
   type AiApiKeysRef,
   type AiCredentialStatuses,
+  type AiLocalConnectionStatuses,
 } from "./AiProvidersDialog";
 import { AiModelPicker } from "./AiModelPicker";
 import {
@@ -226,6 +232,8 @@ export default function AiChatTab({
     () => ({
       gemini: { stored: hasEncryptedAiKey("gemini"), unlocked: false },
       openrouter: { stored: hasEncryptedAiKey("openrouter"), unlocked: false },
+      ollama: { stored: false, unlocked: false, ready: false },
+      lmstudio: { stored: false, unlocked: false, ready: false },
     }),
   );
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
@@ -236,11 +244,21 @@ export default function AiChatTab({
   const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
   const [openRouterModelsLoading, setOpenRouterModelsLoading] = useState(false);
   const [openRouterModelsError, setOpenRouterModelsError] = useState<string | null>(null);
+  const [localModels, setLocalModels] = useState<
+    Record<LocalAiProviderId, AiModel[]>
+  >({ ollama: [], lmstudio: [] });
+  const [localConnectionStatuses, setLocalConnectionStatuses] =
+    useState<AiLocalConnectionStatuses>({
+      ollama: { loading: false, ready: false, error: null },
+      lmstudio: { loading: false, ready: false, error: null },
+    });
 
   useEffect(() => {
     const nextStatuses: AiCredentialStatuses = {
       gemini: { stored: hasEncryptedAiKey("gemini"), unlocked: false },
       openrouter: { stored: hasEncryptedAiKey("openrouter"), unlocked: false },
+      ollama: { stored: false, unlocked: false, ready: false },
+      lmstudio: { stored: false, unlocked: false, ready: false },
     };
     for (const provider of ["gemini", "openrouter"] as const) {
       const key = loadAiKeyFromSession(provider);
@@ -310,13 +328,98 @@ export default function AiChatTab({
   const diagramId = diagram?.id;
 
   const activeProvider = settings.ai.activeProvider;
+  const activeProviderLabel =
+    activeProvider === "gemini"
+      ? "Google Gemini"
+      : activeProvider === "openrouter"
+        ? "OpenRouter"
+        : activeProvider === "ollama"
+          ? "Ollama"
+          : "LM Studio";
   const activeModel =
     activeProvider === "gemini"
       ? settings.ai.geminiModel
-      : settings.ai.openRouterModel;
+      : activeProvider === "openrouter"
+        ? settings.ai.openRouterModel
+        : activeProvider === "ollama"
+          ? settings.ai.ollamaModel
+          : settings.ai.lmStudioModel;
+  const activeLocalProvider: LocalAiProviderId | null =
+    activeProvider === "ollama" || activeProvider === "lmstudio"
+      ? activeProvider
+      : null;
+  const activeLocalBaseUrl =
+    activeProvider === "ollama"
+      ? settings.ai.ollamaBaseUrl
+      : settings.ai.lmStudioBaseUrl;
+  const activeModels =
+    activeProvider === "openrouter"
+      ? openRouterModels
+      : activeLocalProvider
+        ? localModels[activeLocalProvider]
+        : [];
+  const activeFavorites =
+    activeProvider === "openrouter"
+      ? settings.ai.openRouterFavoriteModels
+      : activeProvider === "ollama"
+        ? settings.ai.ollamaFavoriteModels
+        : settings.ai.lmStudioFavoriteModels;
   const activeCredentialStatus = credentialStatuses[activeProvider];
   const sessionUnlocked = activeCredentialStatus.unlocked;
   const storedKeyPresent = activeCredentialStatus.stored;
+
+  const testLocalProvider = useCallback(
+    async (provider: LocalAiProviderId, baseUrl: string) => {
+      setLocalConnectionStatuses((current) => ({
+        ...current,
+        [provider]: { loading: true, ready: false, error: null },
+      }));
+      try {
+        const models = await listLocalAiModels(provider, baseUrl);
+        setLocalModels((current) => ({ ...current, [provider]: models }));
+        const currentAiSettings = useStore.getState().settings.ai;
+        const currentModel =
+          provider === "ollama"
+            ? currentAiSettings.ollamaModel
+            : currentAiSettings.lmStudioModel;
+        if (!models.some((model) => model.id === currentModel) && models[0]) {
+          updateSettings(
+            provider === "ollama"
+              ? { ai: { ollamaModel: models[0].id } }
+              : { ai: { lmStudioModel: models[0].id } },
+          );
+        }
+        setLocalConnectionStatuses((current) => ({
+          ...current,
+          [provider]: {
+            loading: false,
+            ready: models.length > 0,
+            error: models.length > 0 ? null : "No local models were found.",
+          },
+        }));
+        setCredentialStatuses((current) => ({
+          ...current,
+          [provider]: { ...current[provider], ready: models.length > 0 },
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not connect to the local provider.";
+        setLocalConnectionStatuses((current) => ({
+          ...current,
+          [provider]: { loading: false, ready: false, error: message },
+        }));
+        setCredentialStatuses((current) => ({
+          ...current,
+          [provider]: { ...current[provider], ready: false },
+        }));
+      }
+    },
+    [updateSettings],
+  );
+
+  useEffect(() => {
+    if (!activeLocalProvider) return;
+    void testLocalProvider(activeLocalProvider, activeLocalBaseUrl);
+  }, [activeLocalBaseUrl, activeLocalProvider, testLocalProvider]);
 
   useEffect(() => {
     if (activeProvider !== "openrouter") return;
@@ -418,7 +521,32 @@ export default function AiChatTab({
   ]);
 
   const keyStatus = useMemo(() => {
-    const providerName = activeProvider === "gemini" ? "Gemini" : "OpenRouter";
+    const providerName =
+      activeProvider === "gemini"
+        ? "Gemini"
+        : activeProvider === "openrouter"
+          ? "OpenRouter"
+          : activeProvider === "ollama"
+            ? "Ollama"
+            : "LM Studio";
+    if (activeLocalProvider) {
+      const localStatus = localConnectionStatuses[activeLocalProvider];
+      if (localStatus.loading) {
+        return { label: "Connecting", variant: "outline" as const, className: "" };
+      }
+      if (localStatus.error) {
+        return {
+          label: "Connection error",
+          variant: "destructive" as const,
+          className: "",
+        };
+      }
+      return {
+        label: localStatus.ready ? "Connected" : "No models",
+        variant: localStatus.ready ? ("default" as const) : ("secondary" as const),
+        className: "",
+      };
+    }
     if (!storedKeyPresent) {
       return {
         label: `No ${providerName} key`,
@@ -440,7 +568,13 @@ export default function AiChatTab({
       variant: "default" as const,
       className: "",
     };
-  }, [activeProvider, storedKeyPresent, sessionUnlocked]);
+  }, [
+    activeLocalProvider,
+    activeProvider,
+    localConnectionStatuses,
+    storedKeyPresent,
+    sessionUnlocked,
+  ]);
 
   const handleCredentialStatusChange = useCallback(
     (provider: AiProviderId, status: { stored: boolean; unlocked: boolean }) => {
@@ -463,6 +597,17 @@ export default function AiChatTab({
     [updateSettings],
   );
 
+  const handleLocalModelChange = useCallback(
+    (model: string) => {
+      if (activeProvider === "ollama") {
+        updateSettings({ ai: { ollamaModel: model } });
+      } else if (activeProvider === "lmstudio") {
+        updateSettings({ ai: { lmStudioModel: model } });
+      }
+    },
+    [activeProvider, updateSettings],
+  );
+
   const toggleOpenRouterFavorite = useCallback(
     (modelId: string) => {
       const favorites = settings.ai.openRouterFavoriteModels;
@@ -475,6 +620,36 @@ export default function AiChatTab({
       });
     },
     [settings.ai.openRouterFavoriteModels, updateSettings],
+  );
+
+  const toggleLocalFavorite = useCallback(
+    (modelId: string) => {
+      if (activeProvider === "ollama") {
+        const favorites = settings.ai.ollamaFavoriteModels;
+        updateSettings({
+          ai: {
+            ollamaFavoriteModels: favorites.includes(modelId)
+              ? favorites.filter((id) => id !== modelId)
+              : [...favorites, modelId],
+          },
+        });
+      } else if (activeProvider === "lmstudio") {
+        const favorites = settings.ai.lmStudioFavoriteModels;
+        updateSettings({
+          ai: {
+            lmStudioFavoriteModels: favorites.includes(modelId)
+              ? favorites.filter((id) => id !== modelId)
+              : [...favorites, modelId],
+          },
+        });
+      }
+    },
+    [
+      activeProvider,
+      settings.ai.lmStudioFavoriteModels,
+      settings.ai.ollamaFavoriteModels,
+      updateSettings,
+    ],
   );
 
   const clearChat = useCallback(async () => {
@@ -498,7 +673,7 @@ export default function AiChatTab({
       return;
     }
     const key = apiKeysRef.current[activeProvider];
-    if (!key) {
+    if (!activeLocalProvider && !key) {
       showError(`Add your ${activeProvider === "gemini" ? "Gemini" : "OpenRouter"} API key in settings.`);
       setProvidersDialogOpen(true);
       return;
@@ -541,7 +716,8 @@ ${contextJson}`;
                history,
                userMessage: augmentedUser,
              })
-           : await callOpenRouterDiagramAssistant({
+           : activeProvider === "openrouter"
+             ? await callOpenRouterDiagramAssistant({
                apiKey: key,
                model: activeModel,
                supportsResponseFormat:
@@ -550,7 +726,15 @@ ${contextJson}`;
                systemInstruction: SYSTEM_INSTRUCTION,
                history,
                userMessage: augmentedUser,
-             });
+             })
+             : await callLocalDiagramAssistant({
+                 provider: activeLocalProvider!,
+                 baseUrl: activeLocalBaseUrl,
+                 model: activeModel,
+                 systemInstruction: SYSTEM_INSTRUCTION,
+                 history,
+                 userMessage: augmentedUser,
+               });
 
       let parsed: unknown;
       try {
@@ -641,12 +825,18 @@ ${contextJson}`;
     activeModel,
     activeProvider,
     openRouterModels,
+    activeLocalBaseUrl,
+    activeLocalProvider,
   ]);
 
   if (!diagram) return null;
 
+  const localReady = activeLocalProvider
+    ? localConnectionStatuses[activeLocalProvider].ready
+    : false;
+  const providerReady = activeLocalProvider ? localReady : sessionUnlocked;
   const canSend =
-    !isLocked && !sending && draft.trim().length > 0 && sessionUnlocked;
+    !isLocked && !sending && draft.trim().length > 0 && providerReady;
 
   const providerControls = (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -660,17 +850,39 @@ ${contextJson}`;
         <SelectContent>
           <SelectItem value="gemini">Google Gemini</SelectItem>
           <SelectItem value="openrouter">OpenRouter</SelectItem>
+          <SelectItem value="ollama">Ollama</SelectItem>
+          <SelectItem value="lmstudio">LM Studio</SelectItem>
         </SelectContent>
       </Select>
-      {activeProvider === "openrouter" ? (
+      {activeProvider !== "gemini" ? (
         <AiModelPicker
-          models={openRouterModels}
+          models={activeModels}
           value={activeModel}
-          favorites={settings.ai.openRouterFavoriteModels}
-          loading={openRouterModelsLoading}
-          error={openRouterModelsError}
-          onValueChange={handleOpenRouterModelChange}
-          onToggleFavorite={toggleOpenRouterFavorite}
+          favorites={activeFavorites}
+          loading={
+            activeProvider === "openrouter"
+              ? openRouterModelsLoading
+              : activeLocalProvider
+                ? localConnectionStatuses[activeLocalProvider].loading
+                : false
+          }
+          error={
+            activeProvider === "openrouter"
+              ? openRouterModelsError
+              : activeLocalProvider
+                ? localConnectionStatuses[activeLocalProvider].error
+                : null
+          }
+          onValueChange={
+            activeProvider === "openrouter"
+              ? handleOpenRouterModelChange
+              : handleLocalModelChange
+          }
+          onToggleFavorite={
+            activeProvider === "openrouter"
+              ? toggleOpenRouterFavorite
+              : toggleLocalFavorite
+          }
         />
       ) : (
         <Badge
@@ -699,8 +911,10 @@ ${contextJson}`;
   let textareaPlaceholder = "Ask for tables, columns, or relationships…";
   if (isLocked) {
     textareaPlaceholder = "Unlock diagram to chat…";
-  } else if (!sessionUnlocked) {
-    textareaPlaceholder = "Unlock your API key to start…";
+  } else if (!providerReady) {
+    textareaPlaceholder = activeLocalProvider
+      ? "Connect to the local provider to start…"
+      : "Unlock your API key to start…";
   } else if (pinnedTablesForChips.length === 1) {
     const label = pinnedTablesForChips.at(0)?.label ?? "this table";
     textareaPlaceholder = `Describe changes to "${label}" or its related tables…`;
@@ -726,14 +940,14 @@ ${contextJson}`;
             <span className="font-mono text-[11px]">orders</span> to{" "}
             <span className="font-mono text-[11px]">users</span>.
           </p>
-          {!storedKeyPresent && (
+          {!providerReady && (
             <Button
               type="button"
               size="sm"
               className="mt-4"
                onClick={() => setProvidersDialogOpen(true)}
             >
-              Add API key
+              {activeLocalProvider ? "Connect provider" : "Add API key"}
             </Button>
           )}
         </div>
@@ -801,6 +1015,10 @@ ${contextJson}`;
         apiKeysRef={apiKeysRef}
         statuses={credentialStatuses}
         onStatusChange={handleCredentialStatusChange}
+        aiSettings={settings.ai}
+        onAiSettingsChange={(next) => updateSettings({ ai: next })}
+        localConnectionStatuses={localConnectionStatuses}
+        onTestLocalProvider={testLocalProvider}
       />
       <AlertDialog
         open={clearChatDialogOpen}
@@ -870,7 +1088,7 @@ ${contextJson}`;
                       </p>
                     </div>
                      <p className="leading-relaxed text-muted-foreground">
-                       Powered by {activeProvider === "gemini" ? "Google Gemini" : "OpenRouter"}.
+                       Powered by {activeProviderLabel}.
                        Your key stays in this browser, and each message includes
                        a snapshot of your diagram so the assistant can suggest
                        schema changes.
@@ -965,7 +1183,7 @@ ${contextJson}`;
                     </Badge>
                   </div>
                    <p className="text-[11px] leading-snug text-muted-foreground">
-                     Powered by {activeProvider === "gemini" ? "Google Gemini" : "OpenRouter"}.
+                     Powered by {activeProviderLabel}.
                      Diagram data is sent with each message.
                    </p>
                   <div className="flex flex-wrap gap-2 pt-0.5">
@@ -1055,7 +1273,7 @@ ${contextJson}`;
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={textareaPlaceholder}
-              disabled={isLocked || sending || !sessionUnlocked}
+               disabled={isLocked || sending || !providerReady}
               className="min-h-[44px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm shadow-none focus-visible:ring-0"
               rows={2}
               onKeyDown={(e) => {

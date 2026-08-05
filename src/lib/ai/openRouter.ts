@@ -1,13 +1,11 @@
-export interface OpenRouterModel {
-  id: string;
-  name: string;
-  description?: string;
-  contextLength: number | null;
+import type { AiModel } from "./aiProviderTypes";
+
+export type OpenRouterModel = AiModel & {
   supportsResponseFormat: boolean;
   supportsStructuredOutputs: boolean;
   promptPrice: string;
   completionPrice: string;
-}
+};
 
 interface OpenRouterModelResponse {
   data?: Array<{

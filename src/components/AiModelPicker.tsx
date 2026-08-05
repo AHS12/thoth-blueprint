@@ -1,4 +1,4 @@
-import type { OpenRouterModel } from "@/lib/ai/openRouter";
+import type { AiModel } from "@/lib/ai/aiProviderTypes";
 import { cn } from "@/lib/utils";
 import { Check, ChevronDown, Loader2, Star } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -14,7 +14,7 @@ import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 
 interface AiModelPickerProps {
-  models: OpenRouterModel[];
+  models: AiModel[];
   value: string;
   favorites: string[];
   loading: boolean;
@@ -52,7 +52,7 @@ export function AiModelPicker({
           variant="outline"
           disabled={loading && models.length === 0}
           className="h-8 min-w-0 max-w-full justify-between gap-2 px-2.5 text-left text-[11px] font-normal"
-          title={selected?.id ?? (value || "Choose an OpenRouter model")}
+          title={selected?.id ?? (value || "Choose a model")}
         >
           <span className="min-w-0 truncate">
             {loading && models.length === 0 ? (
@@ -70,7 +70,7 @@ export function AiModelPicker({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(26rem,calc(100vw-2rem))] p-0">
         <Command>
-          <CommandInput placeholder="Search all OpenRouter models..." />
+          <CommandInput placeholder="Search all models..." />
           <CommandList className="max-h-[min(60vh,28rem)]">
             {error ? (
               <p className="px-3 py-6 text-center text-xs text-destructive">{error}</p>
