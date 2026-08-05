@@ -66,4 +66,16 @@ export const DEFAULT_SETTINGS: Settings = {
     retentionHours: 40,
     maxCountPerDiagram: 50,
   },
+  ai: {
+    activeProvider: "gemini",
+    geminiModel: "gemini-flash-latest",
+    openRouterModel: "",
+    openRouterFavoriteModels: [],
+    ollamaBaseUrl: "http://localhost:11434",
+    ollamaModel: "",
+    ollamaFavoriteModels: [],
+    lmStudioBaseUrl: "http://localhost:1234",
+    lmStudioModel: "",
+    lmStudioFavoriteModels: [],
+  },
 };

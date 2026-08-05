@@ -1,4 +1,5 @@
 import {
+  clearAiChatHistory,
   loadAiChatHistory,
   saveAiChatHistory,
 } from "@/lib/ai/aiChatHistory";
@@ -11,10 +12,20 @@ import {
   GEMINI_DIAGRAM_MODEL,
 } from "@/lib/ai/callGemini";
 import {
-  hasEncryptedGeminiKey,
-  loadGeminiKeyFromSession,
-} from "@/lib/ai/geminiEncryptedStorage";
-import type { AiChatMessage } from "@/lib/types";
+  callOpenRouterDiagramAssistant,
+  listOpenRouterModels,
+  type OpenRouterModel,
+} from "@/lib/ai/openRouter";
+import {
+  callLocalDiagramAssistant,
+  listLocalAiModels,
+} from "@/lib/ai/localProviders";
+import type { AiModel, LocalAiProviderId } from "@/lib/ai/aiProviderTypes";
+import {
+  loadAiKeyFromSession,
+  hasEncryptedAiKey,
+} from "@/lib/ai/aiCredentialStorage";
+import type { AiChatMessage, AiProviderId } from "@/lib/types";
 import { useStore } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { cn } from "@/lib/utils";
@@ -26,6 +37,7 @@ import {
   SendHorizontal,
   Settings2,
   Sparkles,
+  Trash2,
   User,
   X,
 } from "lucide-react";
@@ -33,10 +45,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useShallow } from "zustand/react/shallow";
-import { GeminiKeyModal } from "./GeminiKeyModal";
+import {
+  AiProvidersDialog,
+  type AiApiKeysRef,
+  type AiCredentialStatuses,
+  type AiLocalConnectionStatuses,
+} from "./AiProvidersDialog";
+import { AiModelPicker } from "./AiModelPicker";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 import { ScrollArea } from "./ui/scroll-area";
 import { Textarea } from "./ui/textarea";
 
@@ -186,25 +221,53 @@ export default function AiChatTab({
   onRequestClose?: () => void;
   variant?: "sidebar" | "floating";
 }) {
-  const apiKeyRef = useRef<string | null>(null);
+  const apiKeysRef: AiApiKeysRef = useRef<Record<AiProviderId, string | null>>({
+    gemini: null,
+    openrouter: null,
+  });
   const chatScrollEndRef = useRef<HTMLDivElement>(null);
-  const [keyModalOpen, setKeyModalOpen] = useState(false);
-  const [sessionUnlocked, setSessionUnlocked] = useState(false);
+  const [providersDialogOpen, setProvidersDialogOpen] = useState(false);
+  const [clearChatDialogOpen, setClearChatDialogOpen] = useState(false);
+  const [credentialStatuses, setCredentialStatuses] = useState<AiCredentialStatuses>(
+    () => ({
+      gemini: { stored: hasEncryptedAiKey("gemini"), unlocked: false },
+      openrouter: { stored: hasEncryptedAiKey("openrouter"), unlocked: false },
+      ollama: { stored: false, unlocked: false, ready: false },
+      lmstudio: { stored: false, unlocked: false, ready: false },
+    }),
+  );
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
   const [chatHydrated, setChatHydrated] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
 
-  const [storedKeyPresent, setStoredKeyPresent] = useState(() =>
-    hasEncryptedGeminiKey(),
-  );
+  const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
+  const [openRouterModelsLoading, setOpenRouterModelsLoading] = useState(false);
+  const [openRouterModelsError, setOpenRouterModelsError] = useState<string | null>(null);
+  const [localModels, setLocalModels] = useState<
+    Record<LocalAiProviderId, AiModel[]>
+  >({ ollama: [], lmstudio: [] });
+  const [localConnectionStatuses, setLocalConnectionStatuses] =
+    useState<AiLocalConnectionStatuses>({
+      ollama: { loading: false, ready: false, error: null },
+      lmstudio: { loading: false, ready: false, error: null },
+    });
 
   useEffect(() => {
-    const k = loadGeminiKeyFromSession();
-    if (k) {
-      apiKeyRef.current = k;
-      setSessionUnlocked(true);
+    const nextStatuses: AiCredentialStatuses = {
+      gemini: { stored: hasEncryptedAiKey("gemini"), unlocked: false },
+      openrouter: { stored: hasEncryptedAiKey("openrouter"), unlocked: false },
+      ollama: { stored: false, unlocked: false, ready: false },
+      lmstudio: { stored: false, unlocked: false, ready: false },
+    };
+    for (const provider of ["gemini", "openrouter"] as const) {
+      const key = loadAiKeyFromSession(provider);
+      if (key) {
+        apiKeysRef.current[provider] = key;
+        nextStatuses[provider] = { ...nextStatuses[provider], unlocked: true };
+      }
     }
+    setCredentialStatuses(nextStatuses);
   }, []);
 
   const {
@@ -215,6 +278,8 @@ export default function AiChatTab({
     removeAiChatPinnedTable,
     setAiChatPinnedTableIds,
     applyAiDiagramOperations,
+    settings,
+    updateSettings,
   } = useStore(
     useShallow((s) => {
       const d = s.selectedDiagramId
@@ -228,6 +293,8 @@ export default function AiChatTab({
         removeAiChatPinnedTable: s.removeAiChatPinnedTable,
         setAiChatPinnedTableIds: s.setAiChatPinnedTableIds,
         applyAiDiagramOperations: s.applyAiDiagramOperations,
+        settings: s.settings,
+        updateSettings: s.updateSettings,
       };
     }),
   );
@@ -260,8 +327,133 @@ export default function AiChatTab({
 
   const diagramId = diagram?.id;
 
+  const activeProvider = settings.ai.activeProvider;
+  const activeProviderLabel =
+    activeProvider === "gemini"
+      ? "Google Gemini"
+      : activeProvider === "openrouter"
+        ? "OpenRouter"
+        : activeProvider === "ollama"
+          ? "Ollama"
+          : "LM Studio";
+  const activeModel =
+    activeProvider === "gemini"
+      ? settings.ai.geminiModel
+      : activeProvider === "openrouter"
+        ? settings.ai.openRouterModel
+        : activeProvider === "ollama"
+          ? settings.ai.ollamaModel
+          : settings.ai.lmStudioModel;
+  const activeLocalProvider: LocalAiProviderId | null =
+    activeProvider === "ollama" || activeProvider === "lmstudio"
+      ? activeProvider
+      : null;
+  const activeLocalBaseUrl =
+    activeProvider === "ollama"
+      ? settings.ai.ollamaBaseUrl
+      : settings.ai.lmStudioBaseUrl;
+  const activeModels =
+    activeProvider === "openrouter"
+      ? openRouterModels
+      : activeLocalProvider
+        ? localModels[activeLocalProvider]
+        : [];
+  const activeFavorites =
+    activeProvider === "openrouter"
+      ? settings.ai.openRouterFavoriteModels
+      : activeProvider === "ollama"
+        ? settings.ai.ollamaFavoriteModels
+        : settings.ai.lmStudioFavoriteModels;
+  const activeCredentialStatus = credentialStatuses[activeProvider];
+  const sessionUnlocked = activeCredentialStatus.unlocked;
+  const storedKeyPresent = activeCredentialStatus.stored;
+
+  const testLocalProvider = useCallback(
+    async (provider: LocalAiProviderId, baseUrl: string) => {
+      setLocalConnectionStatuses((current) => ({
+        ...current,
+        [provider]: { loading: true, ready: false, error: null },
+      }));
+      try {
+        const models = await listLocalAiModels(provider, baseUrl);
+        setLocalModels((current) => ({ ...current, [provider]: models }));
+        const currentAiSettings = useStore.getState().settings.ai;
+        const currentModel =
+          provider === "ollama"
+            ? currentAiSettings.ollamaModel
+            : currentAiSettings.lmStudioModel;
+        if (!models.some((model) => model.id === currentModel) && models[0]) {
+          updateSettings(
+            provider === "ollama"
+              ? { ai: { ollamaModel: models[0].id } }
+              : { ai: { lmStudioModel: models[0].id } },
+          );
+        }
+        setLocalConnectionStatuses((current) => ({
+          ...current,
+          [provider]: {
+            loading: false,
+            ready: models.length > 0,
+            error: models.length > 0 ? null : "No local models were found.",
+          },
+        }));
+        setCredentialStatuses((current) => ({
+          ...current,
+          [provider]: { ...current[provider], ready: models.length > 0 },
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not connect to the local provider.";
+        setLocalConnectionStatuses((current) => ({
+          ...current,
+          [provider]: { loading: false, ready: false, error: message },
+        }));
+        setCredentialStatuses((current) => ({
+          ...current,
+          [provider]: { ...current[provider], ready: false },
+        }));
+      }
+    },
+    [updateSettings],
+  );
+
+  useEffect(() => {
+    if (!activeLocalProvider) return;
+    void testLocalProvider(activeLocalProvider, activeLocalBaseUrl);
+  }, [activeLocalBaseUrl, activeLocalProvider, testLocalProvider]);
+
+  useEffect(() => {
+    if (activeProvider !== "openrouter") return;
+    let cancelled = false;
+    setOpenRouterModelsLoading(true);
+    setOpenRouterModelsError(null);
+    void listOpenRouterModels({ apiKey: apiKeysRef.current.openrouter })
+      .then((models) => {
+        if (cancelled) return;
+        setOpenRouterModels(models);
+        const selected = models.find((model) => model.id === settings.ai.openRouterModel);
+        if (!selected && models[0]) {
+          const preferred = models.find((model) => model.supportsStructuredOutputs) ?? models[0];
+          updateSettings({ ai: { openRouterModel: preferred.id } });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setOpenRouterModelsError(
+            error instanceof Error ? error.message : "Could not load OpenRouter models.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setOpenRouterModelsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProvider, settings.ai.openRouterModel, updateSettings]);
+
   useEffect(() => {
     setChatHydrated(false);
+    setMessages([]);
     if (diagramId == null) {
       setMessages([]);
       setChatHydrated(true);
@@ -329,9 +521,35 @@ export default function AiChatTab({
   ]);
 
   const keyStatus = useMemo(() => {
+    const providerName =
+      activeProvider === "gemini"
+        ? "Gemini"
+        : activeProvider === "openrouter"
+          ? "OpenRouter"
+          : activeProvider === "ollama"
+            ? "Ollama"
+            : "LM Studio";
+    if (activeLocalProvider) {
+      const localStatus = localConnectionStatuses[activeLocalProvider];
+      if (localStatus.loading) {
+        return { label: "Connecting", variant: "outline" as const, className: "" };
+      }
+      if (localStatus.error) {
+        return {
+          label: "Connection error",
+          variant: "destructive" as const,
+          className: "",
+        };
+      }
+      return {
+        label: localStatus.ready ? "Connected" : "No models",
+        variant: localStatus.ready ? ("default" as const) : ("secondary" as const),
+        className: "",
+      };
+    }
     if (!storedKeyPresent) {
       return {
-        label: "No API key",
+        label: `No ${providerName} key`,
         variant: "secondary" as const,
         className:
           "border-transparent bg-muted text-muted-foreground hover:bg-muted",
@@ -350,7 +568,102 @@ export default function AiChatTab({
       variant: "default" as const,
       className: "",
     };
-  }, [storedKeyPresent, sessionUnlocked]);
+  }, [
+    activeLocalProvider,
+    activeProvider,
+    localConnectionStatuses,
+    storedKeyPresent,
+    sessionUnlocked,
+  ]);
+
+  const handleCredentialStatusChange = useCallback(
+    (provider: AiProviderId, status: { stored: boolean; unlocked: boolean }) => {
+      setCredentialStatuses((current) => ({ ...current, [provider]: status }));
+    },
+    [],
+  );
+
+  const handleProviderChange = useCallback(
+    (provider: AiProviderId) => {
+      updateSettings({ ai: { activeProvider: provider } });
+    },
+    [updateSettings],
+  );
+
+  const handleOpenRouterModelChange = useCallback(
+    (model: string) => {
+      updateSettings({ ai: { openRouterModel: model } });
+    },
+    [updateSettings],
+  );
+
+  const handleLocalModelChange = useCallback(
+    (model: string) => {
+      if (activeProvider === "ollama") {
+        updateSettings({ ai: { ollamaModel: model } });
+      } else if (activeProvider === "lmstudio") {
+        updateSettings({ ai: { lmStudioModel: model } });
+      }
+    },
+    [activeProvider, updateSettings],
+  );
+
+  const toggleOpenRouterFavorite = useCallback(
+    (modelId: string) => {
+      const favorites = settings.ai.openRouterFavoriteModels;
+      updateSettings({
+        ai: {
+          openRouterFavoriteModels: favorites.includes(modelId)
+            ? favorites.filter((id) => id !== modelId)
+            : [...favorites, modelId],
+        },
+      });
+    },
+    [settings.ai.openRouterFavoriteModels, updateSettings],
+  );
+
+  const toggleLocalFavorite = useCallback(
+    (modelId: string) => {
+      if (activeProvider === "ollama") {
+        const favorites = settings.ai.ollamaFavoriteModels;
+        updateSettings({
+          ai: {
+            ollamaFavoriteModels: favorites.includes(modelId)
+              ? favorites.filter((id) => id !== modelId)
+              : [...favorites, modelId],
+          },
+        });
+      } else if (activeProvider === "lmstudio") {
+        const favorites = settings.ai.lmStudioFavoriteModels;
+        updateSettings({
+          ai: {
+            lmStudioFavoriteModels: favorites.includes(modelId)
+              ? favorites.filter((id) => id !== modelId)
+              : [...favorites, modelId],
+          },
+        });
+      }
+    },
+    [
+      activeProvider,
+      settings.ai.lmStudioFavoriteModels,
+      settings.ai.ollamaFavoriteModels,
+      updateSettings,
+    ],
+  );
+
+  const clearChat = useCallback(async () => {
+    if (diagramId == null) return;
+    try {
+      await clearAiChatHistory(diagramId);
+      setMessages([]);
+      setClearChatDialogOpen(false);
+      showSuccess("Started a fresh chat for this diagram.");
+    } catch (error) {
+      console.error(error);
+      showError("Could not clear this chat.");
+    }
+  }, [diagramId]);
 
   const sendMessage = useCallback(async () => {
     const text = draft.trim();
@@ -359,10 +672,14 @@ export default function AiChatTab({
       showError("Diagram is locked.");
       return;
     }
-    const key = apiKeyRef.current;
-    if (!key) {
-      showError("Add your API key in settings.");
-      setKeyModalOpen(true);
+    const key = apiKeysRef.current[activeProvider];
+    if (!activeLocalProvider && !key) {
+      showError(`Add your ${activeProvider === "gemini" ? "Gemini" : "OpenRouter"} API key in settings.`);
+      setProvidersDialogOpen(true);
+      return;
+    }
+    if (!activeModel) {
+      showError("Choose an AI model before sending a message.");
       return;
     }
 
@@ -390,12 +707,34 @@ ${scopeHint}Below is the live diagram snapshot — use it as the only source of 
 Current diagram (JSON):
 ${contextJson}`;
 
-      const rawText = await callGeminiDiagramAssistant({
-        apiKey: key,
-        systemInstruction: SYSTEM_INSTRUCTION,
-        history,
-        userMessage: augmentedUser,
-      });
+       const rawText =
+         activeProvider === "gemini"
+           ? await callGeminiDiagramAssistant({
+               apiKey: key,
+               model: activeModel,
+               systemInstruction: SYSTEM_INSTRUCTION,
+               history,
+               userMessage: augmentedUser,
+             })
+           : activeProvider === "openrouter"
+             ? await callOpenRouterDiagramAssistant({
+               apiKey: key,
+               model: activeModel,
+               supportsResponseFormat:
+                 openRouterModels.find((model) => model.id === activeModel)
+                   ?.supportsResponseFormat ?? false,
+               systemInstruction: SYSTEM_INSTRUCTION,
+               history,
+               userMessage: augmentedUser,
+             })
+             : await callLocalDiagramAssistant({
+                 provider: activeLocalProvider!,
+                 baseUrl: activeLocalBaseUrl,
+                 model: activeModel,
+                 systemInstruction: SYSTEM_INSTRUCTION,
+                 history,
+                 userMessage: augmentedUser,
+               });
 
       let parsed: unknown;
       try {
@@ -483,18 +822,99 @@ ${contextJson}`;
     contextJson,
     applyAiDiagramOperations,
     pinnedLabelsPhrase,
+    activeModel,
+    activeProvider,
+    openRouterModels,
+    activeLocalBaseUrl,
+    activeLocalProvider,
   ]);
 
   if (!diagram) return null;
 
+  const localReady = activeLocalProvider
+    ? localConnectionStatuses[activeLocalProvider].ready
+    : false;
+  const providerReady = activeLocalProvider ? localReady : sessionUnlocked;
   const canSend =
-    !isLocked && !sending && draft.trim().length > 0 && sessionUnlocked;
+    !isLocked && !sending && draft.trim().length > 0 && providerReady;
+
+  const providerControls = (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <Select
+        value={activeProvider}
+        onValueChange={(value) => handleProviderChange(value as AiProviderId)}
+      >
+        <SelectTrigger className="h-8 w-[7.5rem] px-2.5 text-[11px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="gemini">Google Gemini</SelectItem>
+          <SelectItem value="openrouter">OpenRouter</SelectItem>
+          <SelectItem value="ollama">Ollama</SelectItem>
+          <SelectItem value="lmstudio">LM Studio</SelectItem>
+        </SelectContent>
+      </Select>
+      {activeProvider !== "gemini" ? (
+        <AiModelPicker
+          models={activeModels}
+          value={activeModel}
+          favorites={activeFavorites}
+          loading={
+            activeProvider === "openrouter"
+              ? openRouterModelsLoading
+              : activeLocalProvider
+                ? localConnectionStatuses[activeLocalProvider].loading
+                : false
+          }
+          error={
+            activeProvider === "openrouter"
+              ? openRouterModelsError
+              : activeLocalProvider
+                ? localConnectionStatuses[activeLocalProvider].error
+                : null
+          }
+          onValueChange={
+            activeProvider === "openrouter"
+              ? handleOpenRouterModelChange
+              : handleLocalModelChange
+          }
+          onToggleFavorite={
+            activeProvider === "openrouter"
+              ? toggleOpenRouterFavorite
+              : toggleLocalFavorite
+          }
+        />
+      ) : (
+        <Badge
+          variant="outline"
+          className="max-w-[12rem] truncate border-border/80 font-mono text-[10px] font-normal text-muted-foreground"
+          title={activeModel || GEMINI_DIAGRAM_MODEL}
+        >
+          {activeModel || GEMINI_DIAGRAM_MODEL}
+        </Badge>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 shrink-0"
+        onClick={() => setClearChatDialogOpen(true)}
+        disabled={messages.length === 0 || sending}
+        aria-label="Start a new chat"
+        title="Start a new chat"
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 
   let textareaPlaceholder = "Ask for tables, columns, or relationships…";
   if (isLocked) {
     textareaPlaceholder = "Unlock diagram to chat…";
-  } else if (!sessionUnlocked) {
-    textareaPlaceholder = "Unlock your API key to start…";
+  } else if (!providerReady) {
+    textareaPlaceholder = activeLocalProvider
+      ? "Connect to the local provider to start…"
+      : "Unlock your API key to start…";
   } else if (pinnedTablesForChips.length === 1) {
     const label = pinnedTablesForChips.at(0)?.label ?? "this table";
     textareaPlaceholder = `Describe changes to "${label}" or its related tables…`;
@@ -504,7 +924,7 @@ ${contextJson}`;
   }
 
   const messageList = (
-    <div className="space-y-4 p-4 pb-2">
+    <div className="min-w-0 space-y-4 p-4 pb-2">
       {messages.length === 0 && !sending ? (
         <div className="rounded-2xl border border-dashed bg-muted/20 px-4 py-10 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/80 text-muted-foreground">
@@ -520,14 +940,14 @@ ${contextJson}`;
             <span className="font-mono text-[11px]">orders</span> to{" "}
             <span className="font-mono text-[11px]">users</span>.
           </p>
-          {!storedKeyPresent && (
+          {!providerReady && (
             <Button
               type="button"
               size="sm"
               className="mt-4"
-              onClick={() => setKeyModalOpen(true)}
+               onClick={() => setProvidersDialogOpen(true)}
             >
-              Add API key
+              {activeLocalProvider ? "Connect provider" : "Add API key"}
             </Button>
           )}
         </div>
@@ -557,13 +977,13 @@ ${contextJson}`;
               </div>
               <div
                 className={cn(
-                  "rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
+                  "min-w-0 max-w-full overflow-hidden rounded-2xl px-3.5 py-2.5 text-sm shadow-sm break-words [overflow-wrap:anywhere]",
                   variant === "floating"
                     ? "max-w-[min(100%,26rem)]"
                     : "max-w-[min(100%,20rem)]",
                   msg.role === "user"
                     ? "bg-primary text-primary-foreground rounded-tr-md"
-                    : "border bg-card rounded-tl-md prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2",
+                    : "border bg-card rounded-tl-md prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-pre:max-w-full prose-pre:overflow-x-auto prose-li:[overflow-wrap:anywhere]",
                 )}
               >
                 {msg.role === "model" ? (
@@ -589,15 +1009,37 @@ ${contextJson}`;
 
   return (
     <>
-      <GeminiKeyModal
-        open={keyModalOpen}
-        onOpenChange={setKeyModalOpen}
-        storedKeyPresent={storedKeyPresent}
-        onStoredKeyChange={setStoredKeyPresent}
-        sessionUnlocked={sessionUnlocked}
-        onSessionUnlockedChange={setSessionUnlocked}
-        apiKeyRef={apiKeyRef}
+      <AiProvidersDialog
+        open={providersDialogOpen}
+        onOpenChange={setProvidersDialogOpen}
+        apiKeysRef={apiKeysRef}
+        statuses={credentialStatuses}
+        onStatusChange={handleCredentialStatusChange}
+        aiSettings={settings.ai}
+        onAiSettingsChange={(next) => updateSettings({ ai: next })}
+        localConnectionStatuses={localConnectionStatuses}
+        onTestLocalProvider={testLocalProvider}
       />
+      <AlertDialog
+        open={clearChatDialogOpen}
+        onOpenChange={setClearChatDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start a fresh chat?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the saved conversation for this diagram. Your diagram
+              and pinned table scope will not change.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void clearChat()}>
+              Clear chat
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="flex h-full min-h-0 flex-col">
         {variant === "floating" ? (
@@ -640,17 +1082,17 @@ ${contextJson}`;
                       <p className="mb-1 font-medium text-foreground">Model</p>
                       <p
                         className="break-all font-mono text-[10px] text-muted-foreground"
-                        title={GEMINI_DIAGRAM_MODEL}
-                      >
-                        {GEMINI_DIAGRAM_MODEL}
+                         title={activeModel || GEMINI_DIAGRAM_MODEL}
+                       >
+                         {activeModel || GEMINI_DIAGRAM_MODEL}
                       </p>
                     </div>
-                    <p className="leading-relaxed text-muted-foreground">
-                      Powered by Google Gemini. After you unlock once, you stay
-                      signed in for this session until you lock or close the
-                      browser tab. Each message includes a snapshot of your
-                      diagram so the assistant can suggest schema changes.
-                    </p>
+                     <p className="leading-relaxed text-muted-foreground">
+                       Powered by {activeProviderLabel}.
+                       Your key stays in this browser, and each message includes
+                       a snapshot of your diagram so the assistant can suggest
+                       schema changes.
+                     </p>
                     <div className="border-t pt-3">
                       <p className="mb-1.5 font-medium text-foreground">
                         Accuracy
@@ -677,7 +1119,7 @@ ${contextJson}`;
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 shrink-0"
-                  onClick={() => setKeyModalOpen(true)}
+                   onClick={() => setProvidersDialogOpen(true)}
                   aria-label="API key settings"
                 >
                   <Settings2 className="h-4 w-4" />
@@ -688,7 +1130,7 @@ ${contextJson}`;
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 shrink-0 text-amber-600 dark:text-amber-400"
-                    onClick={() => setKeyModalOpen(true)}
+                     onClick={() => setProvidersDialogOpen(true)}
                     aria-label="Unlock API key"
                   >
                     <Lock className="h-4 w-4" />
@@ -705,10 +1147,11 @@ ${contextJson}`;
                   >
                     <X className="h-4 w-4" />
                   </Button>
-                ) : null}
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                 ) : null}
+               </div>
+             </div>
+             <div className="border-t px-2 py-2 sm:px-3">{providerControls}</div>
+             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               {messageList}
             </div>
           </>
@@ -733,34 +1176,33 @@ ${contextJson}`;
                     <Badge
                       variant="outline"
                       className="max-w-[14rem] truncate border-border/80 font-mono text-[10px] font-normal text-muted-foreground"
-                      title={GEMINI_DIAGRAM_MODEL}
-                      aria-label={`AI model: ${GEMINI_DIAGRAM_MODEL}`}
+                       title={activeModel || GEMINI_DIAGRAM_MODEL}
+                       aria-label={`AI model: ${activeModel || GEMINI_DIAGRAM_MODEL}`}
                     >
-                      {GEMINI_DIAGRAM_MODEL}
+                       {activeModel || GEMINI_DIAGRAM_MODEL}
                     </Badge>
                   </div>
-                  <p className="text-[11px] leading-snug text-muted-foreground">
-                    Powered by Google Gemini. After you unlock once, you stay
-                    signed in for this tab until you lock or close it. Diagram
-                    data is sent with each message.
-                  </p>
+                   <p className="text-[11px] leading-snug text-muted-foreground">
+                     Powered by {activeProviderLabel}.
+                     Diagram data is sent with each message.
+                   </p>
                   <div className="flex flex-wrap gap-2 pt-0.5">
                     <Button
                       type="button"
                       variant="secondary"
                       size="sm"
                       className="h-8 gap-1.5 text-xs"
-                      onClick={() => setKeyModalOpen(true)}
+                       onClick={() => setProvidersDialogOpen(true)}
                     >
                       <Settings2 className="h-3.5 w-3.5" />
-                      API key
+                       Providers
                     </Button>
                     {storedKeyPresent && !sessionUnlocked && (
                       <Button
                         type="button"
                         size="sm"
                         className="h-8 gap-1.5 text-xs"
-                        onClick={() => setKeyModalOpen(true)}
+                         onClick={() => setProvidersDialogOpen(true)}
                       >
                         <Lock className="h-3.5 w-3.5" />
                         Unlock
@@ -779,10 +1221,11 @@ ${contextJson}`;
                   >
                     <X className="h-4 w-4" />
                   </Button>
-                ) : null}
-              </div>
-            </div>
-            <ScrollArea className="h-0 min-h-0 flex-1">
+               ) : null}
+               </div>
+             </div>
+             <div className="border-t px-4 py-2">{providerControls}</div>
+             <ScrollArea className="h-0 min-h-0 flex-1">
               {messageList}
             </ScrollArea>
           </>
@@ -830,11 +1273,15 @@ ${contextJson}`;
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={textareaPlaceholder}
-              disabled={isLocked || sending || !sessionUnlocked}
+               disabled={isLocked || sending || !providerReady}
               className="min-h-[44px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm shadow-none focus-visible:ring-0"
               rows={2}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
                   e.preventDefault();
                   void sendMessage();
                 }
@@ -856,7 +1303,7 @@ ${contextJson}`;
             </Button>
           </div>
           <p className="mt-2 text-center text-[10px] text-muted-foreground">
-            ⌘/Ctrl + Enter to send · do not paste secrets
+            Enter to send · Shift + Enter for a new line · do not paste secrets
           </p>
         </div>
       </div>

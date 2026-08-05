@@ -1,3 +1,47 @@
+# What's New in ThothBlueprint v0.0.12
+
+This release expands the AI assistant with cloud and local provider support and introduces a Node-free distribution package for running ThothBlueprint locally.
+
+## Highlights
+
+- **Multiple AI Providers:** Configure Google Gemini, OpenRouter, Ollama, or LM Studio from one AI Providers dialog.
+- **Local AI Assistance:** Connect to Ollama or LM Studio and work with local models without sending diagram data to a cloud provider.
+- **Node-Free Release Package:** Download the production distribution from the GitHub release, serve it with a simple local HTTP server, and run ThothBlueprint without Node.js, npm, pnpm, or `node_modules`.
+
+## New & Improved
+
+- **AI Provider Management:**
+  - Add, unlock, lock, and remove provider API keys from the new **AI Providers** dialog.
+  - API keys are encrypted in browser storage and can be unlocked for the current session with a passphrase.
+  - Configure OpenRouter and browse its available model catalog before starting a chat.
+  - Local providers do not require an API key and include connection settings for Ollama and LM Studio.
+
+- **Local AI Models:**
+  - Fetch available models from Ollama and LM Studio directly from the application.
+  - Use structured diagram patch operations with schema-aware local AI responses.
+  - Local provider errors now include connection guidance, including browser access and CORS requirements.
+
+- **AI Chat Experience:**
+  - Improved message input behavior and updated in-app instructions.
+  - AI chat sessions are included in application backups.
+  - The model picker now supports cloud and local providers through a shared interface.
+
+- **Update Checking:**
+  - Added **Check for Updates** access through the Help Center and editor menus.
+  - Corrected the Gemini model selection used by the AI assistant.
+
+- **Local Distribution:**
+  - GitHub releases now provide a ZIP containing the complete Vite `dist` output and release-specific usage instructions.
+  - The package includes the PWA service worker and can continue working offline after its first successful load.
+
+## Notes
+
+- Cloud AI providers require the corresponding API credentials and may be subject to their own usage policies and rate limits.
+- Local AI providers require Ollama or LM Studio to be installed and running on the user's computer.
+- API keys, diagrams, settings, and chat history remain local to the browser unless a provider request or backup export sends the selected data elsewhere.
+
+---
+
 # What's New in ThothBlueprint v0.0.11
 
 This release introduces experimental AI-powered schema assistance and powerful composite primary key support for complex database designs.

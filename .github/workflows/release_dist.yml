@@ -1,0 +1,108 @@
+name: Build Release Distribution
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, for example 0.0.11"
+        required: true
+        type: string
+      upload:
+        description: "Upload the generated ZIP to the selected release"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.22.0
+          cache: true
+
+      - name: Allow required dependency build scripts
+        run: |
+          if [[ ! -f pnpm-workspace.yaml ]]; then
+            cat > pnpm-workspace.yaml <<'EOF'
+          onlyBuiltDependencies:
+            - "@swc/core"
+            - esbuild
+            - protobufjs
+          EOF
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release version
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          package_version="$(node -p "require('./package.json').version")"
+
+          if [[ "$release_version" != "$package_version" ]]; then
+            echo "Release tag $RELEASE_TAG does not match package version $package_version"
+            exit 1
+          fi
+
+          echo "RELEASE_VERSION=$release_version" >> "$GITHUB_ENV"
+          echo "ARCHIVE_NAME=thoth-blueprint-${package_version}-dist.zip" >> "$GITHUB_ENV"
+
+      - name: Build application
+        run: pnpm run build
+
+      - name: Assemble release package
+        run: |
+          test -f dist/index.html
+          test -f dist/sw.js
+          test ! -e dist/README.md
+
+          rm -rf release-package
+          mkdir release-package
+          cp -a dist/. release-package/
+          cp .github/release-dist/README.md release-package/README.md
+
+      - name: Create and verify ZIP
+        run: |
+          (
+            cd release-package
+            zip -qr "../$ARCHIVE_NAME" .
+          )
+
+          test -f "$ARCHIVE_NAME"
+          unzip -Z1 "$ARCHIVE_NAME" | grep -qx "index.html"
+          unzip -Z1 "$ARCHIVE_NAME" | grep -qx "README.md"
+          unzip -Z1 "$ARCHIVE_NAME" | grep -qx "sw.js"
+
+          find dist -type f -printf '%P\n' | sort > dist-files.txt
+          unzip -Z1 "$ARCHIVE_NAME" \
+            | grep -v '/$' \
+            | grep -v '^README.md$' \
+            | sort > archive-dist-files.txt
+          diff -u dist-files.txt archive-dist-files.txt
+
+      - name: Upload ZIP to GitHub Release
+        if: github.event_name == 'release' || inputs.upload == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" "$ARCHIVE_NAME" --repo "$GITHUB_REPOSITORY" --clobber

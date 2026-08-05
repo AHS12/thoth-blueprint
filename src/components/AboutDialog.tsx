@@ -25,10 +25,10 @@ export function AboutDialog({ isOpen, onOpenChange }: AboutDialogProps) {
           <img src="/ThothBlueprint-icon.svg" alt="ThothBlueprint Logo" className="h-16 w-16 mb-2" />
           <DialogTitle className="text-2xl">ThothBlueprint</DialogTitle>
           <DialogDescription className="text-center pt-2">
-            Visualize your database schema with our intuitive drag-and-drop editor. 
-            Import from SQL or DBML, or create new diagrams from scratch. 
-            When you're done, export your design to SQL, DBML, JSON, SVG, or PNG, 
-            or generate migration files for frameworks like Laravel, TypeORM, and Django.
+            Design database schemas with an intuitive drag-and-drop editor. Import SQL, DBML, or JSON,
+            then export to SQL, DBML, JSON, SVG, or PNG, or generate migrations for Laravel, TypeORM, and Django.
+            Use Google Gemini or OpenRouter when online, or connect to Ollama and LM Studio for local AI models.
+            Your diagrams stay stored locally, and the core editor remains offline-first.
           </DialogDescription>
         </DialogHeader>
         <div className="py-4 text-center text-sm text-muted-foreground">

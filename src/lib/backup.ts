@@ -1,22 +1,26 @@
 import { useStore } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { saveAs } from "file-saver";
-import { type AppState, type Diagram } from "./types";
+import { db } from "./db";
+import { type AiChatSession, type AppState, type Diagram } from "./types";
 
 interface BackupData {
   diagrams: Diagram[];
   appState: AppState[];
+  aiChatSessions?: AiChatSession[];
 }
 
-export function exportDbToJson() {
+export async function exportDbToJson() {
   try {
     const state = useStore.getState();
     const diagrams = state.diagrams;
     const selectedDiagramId = state.selectedDiagramId;
+    const aiChatSessions = await db.aiChatSessions.toArray();
 
     const backupData: BackupData = {
       diagrams,
       appState: [{ key: "selectedDiagramId", value: selectedDiagramId || 0 }],
+      aiChatSessions,
     };
 
     const jsonString = JSON.stringify(backupData, null, 2);
@@ -68,9 +72,41 @@ export async function importJsonToDb(jsonString: string) {
       }
     }
 
+    const importedSessions = (backupData.aiChatSessions ?? []).filter(
+      (session) =>
+        typeof session.diagramId === "number" &&
+        processedDiagrams.some((diagram) => diagram.id === session.diagramId),
+    );
+
+    await db.transaction(
+      "rw",
+      db.diagrams,
+      db.appState,
+      db.aiChatSessions,
+      async () => {
+        await db.diagrams.clear();
+        await db.diagrams.bulkPut(processedDiagrams);
+        await db.aiChatSessions.clear();
+        if (importedSessions.length > 0) {
+          await db.aiChatSessions.bulkPut(importedSessions);
+        }
+        await db.appState.put({
+          key: "selectedDiagramId",
+          value: selectedDiagramId || 0,
+        });
+      },
+    );
+
     useStore.setState({
       diagrams: processedDiagrams,
-      selectedDiagramId: selectedDiagramId,
+      diagramsMap: new Map(
+        processedDiagrams.map((diagram) => [diagram.id!, diagram]),
+      ),
+      selectedDiagramId,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      aiChatPinnedTableIds: [],
+      aiChatPanelOpen: false,
       isLoading: false,
     });
 
