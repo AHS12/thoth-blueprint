@@ -1,6 +1,7 @@
 import { type Edge, type Node } from "@xyflow/react";
 
 export type DatabaseType = "mysql" | "postgres";
+export type AiProviderId = "gemini" | "openrouter";
 export type CombinedNode = AppNode | AppNoteNode | AppZoneNode;
 export type ElementType = "table" | "note" | "zone" | "relationship";
 export type ProcessedNode = (AppNode | AppNoteNode | AppZoneNode) & {
@@ -173,6 +174,14 @@ export interface Settings {
   exportForeignKeyConstraint: boolean;
   sidebarScale: number;
   checkpoints: CheckpointSettings;
+  ai: AiSettings;
+}
+
+export interface AiSettings {
+  activeProvider: AiProviderId;
+  geminiModel: string;
+  openRouterModel: string;
+  openRouterFavoriteModels: string[];
 }
 
 export type AppNode = Node<TableNodeData, "table">;

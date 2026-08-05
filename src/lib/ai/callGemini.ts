@@ -5,6 +5,7 @@ export const GEMINI_DIAGRAM_MODEL = "gemini-flash-latest";
 
 export async function callGeminiDiagramAssistant(params: {
   apiKey: string;
+  model?: string;
   systemInstruction: string;
   history: { role: "user" | "model"; text: string }[];
   userMessage: string;
@@ -19,7 +20,7 @@ export async function callGeminiDiagramAssistant(params: {
   ];
 
   const response = await ai.models.generateContent({
-    model: GEMINI_DIAGRAM_MODEL,
+    model: params.model ?? GEMINI_DIAGRAM_MODEL,
     contents,
     config: {
       systemInstruction: params.systemInstruction,

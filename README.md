@@ -37,6 +37,7 @@ Thoth Blueprint is a free, powerful database design tool that allows you to visu
 - 🔒 **Zone Lock/Unlock** - Lock zones to prevent accidental modifications
 - 📋 **Copy/Paste** - Easily duplicate tables and elements
 - ⌨️ **Keyboard Shortcuts** - Speed up your workflow with keyboard shortcuts
+- 🤖 **BYOK AI Assistant** - Use your own Google Gemini or OpenRouter key to manage schemas with a diagram-aware assistant.
 
 ## Quick Start
 
@@ -139,6 +140,14 @@ ThothBlueprint includes several keyboard shortcuts to speed up your workflow:
 - `Ctrl+V` / `Cmd+V` - Paste Selection
 - `Ctrl+Click` / `Cmd+Click` - Select Multiple Nodes
 - `Delete` - Delete Elements
+
+### AI Schema Assistant
+
+The schema assistant supports Google Gemini and OpenRouter. Open the assistant's
+settings button to manage encrypted, browser-local provider keys. OpenRouter
+models are loaded from its live catalog, and favorites are kept at the top of
+the model picker. Chat history is stored locally per diagram, with a fresh-chat
+action available in the assistant header.
 
 ## Contributing
 

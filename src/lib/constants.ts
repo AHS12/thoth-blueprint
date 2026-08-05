@@ -66,4 +66,10 @@ export const DEFAULT_SETTINGS: Settings = {
     retentionHours: 40,
     maxCountPerDiagram: 50,
   },
+  ai: {
+    activeProvider: "gemini",
+    geminiModel: "gemini-flash-latest",
+    openRouterModel: "",
+    openRouterFavoriteModels: [],
+  },
 };

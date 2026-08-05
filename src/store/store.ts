@@ -732,6 +732,10 @@ export const useStore = create<StoreState>()(
           settings = {
             ...DEFAULT_SETTINGS,
             ...parsed,
+            ai: {
+              ...DEFAULT_SETTINGS.ai,
+              ...(parsed?.ai || {}),
+            },
             checkpoints: {
               ...DEFAULT_SETTINGS.checkpoints,
               ...(parsed?.checkpoints || {}),
@@ -800,6 +804,10 @@ export const useStore = create<StoreState>()(
         const updatedSettings = {
           ...state.settings,
           ...newSettings,
+          ai: {
+            ...state.settings.ai,
+            ...(newSettings.ai || {}),
+          },
           checkpoints: {
             ...state.settings.checkpoints,
             ...(newSettings.checkpoints || {}),
@@ -983,6 +991,9 @@ export const useStore = create<StoreState>()(
       });
     },
     permanentlyDeleteDiagram: (id) => {
+      void db.aiChatSessions.delete(id).catch((error) => {
+        console.error("Failed to delete diagram chat history:", error);
+      });
       set((state) => {
         const updatedDiagrams = state.diagrams.filter((d) => d.id !== id);
         return {
