@@ -4,12 +4,20 @@ import { cn } from "@/lib/utils";
 import { useStore } from "@/store/store";
 import { showError, showSuccess } from "@/utils/toast";
 import { formatDistanceToNow } from "date-fns";
-import { FileCode2, GitCommitHorizontal, History, Plus, Table } from "lucide-react";
+import {
+  FileCode2,
+  GitCommitHorizontal,
+  History,
+  KeyRound,
+  Plus,
+  Table,
+} from "lucide-react";
 import React, { useMemo, useRef, useState } from "react";
 import { CheckpointHistoryDialog } from "./CheckpointHistoryDialog";
 import DbmlTab from "./DbmlTab";
 import EditorMenubar from "./EditorMenubar";
 import { DatabaseTypeIcon } from "./icons/DatabaseTypeIcon";
+import IndexesTab from "./IndexesTab";
 import RelationshipsTab from "./RelationshipsTab";
 import TablesTab from "./TablesTab";
 import { Button } from "./ui/button";
@@ -43,12 +51,13 @@ export default function EditorSidebar({
   onViewWhatsNew,
   onViewHelpCenter,
 }: EditorSidebarProps) {
-  type SidebarTabKey = "tables" | "relationships" | "dbml";
+  type SidebarTabKey = "tables" | "relationships" | "indexes" | "dbml";
 
   const selectedDiagramId = useStore((state) => state.selectedDiagramId);
   const diagramsMap = useStore((state) => state.diagramsMap);
   const selectedNodeId = useStore((state) => state.selectedNodeId);
   const selectedEdgeId = useStore((state) => state.selectedEdgeId);
+  const requestTableFocus = useStore((state) => state.requestTableFocus);
   const listCheckpoints = useStore((state) => state.listCheckpoints);
   const restoreCheckpoint = useStore((state) => state.restoreCheckpoint);
   const createCheckpoint = useStore((state) => state.createCheckpoint);
@@ -78,6 +87,10 @@ export default function EditorSidebar({
   const [isDbmlDirty, setIsDbmlDirty] = useState(false);
   const [hasOpenedDbmlTab, setHasOpenedDbmlTab] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(0);
+  const [focusIndexTarget, setFocusIndexTarget] = useState<{
+    tableId: string;
+    indexId?: string;
+  } | null>(null);
   const sidebarContainerRef = useRef<HTMLDivElement | null>(null);
   const manualTabOverrideRef = useRef(false);
   const previousSelectedNodeIdRef = useRef<string | null>(selectedNodeId);
@@ -95,6 +108,17 @@ export default function EditorSidebar({
 
   const edges = useMemo(() => diagram?.data.edges ?? [], [diagram?.data.edges]);
   const isLocked = useMemo(() => diagram?.data.isLocked ?? false, [diagram?.data.isLocked]);
+  const indexCount = useMemo(
+    () =>
+      nodes.reduce(
+        (count, node) =>
+          count +
+          (node.data.indices?.length ?? 0) +
+          (node.data.columns.some((column) => column.pk) ? 1 : 0),
+        0,
+      ),
+    [nodes],
+  );
 
   const refreshCheckpoints = React.useCallback(async () => {
     if (!diagram?.id) {
@@ -150,6 +174,18 @@ export default function EditorSidebar({
     }
   };
 
+  const handleIndexFocus = (tableId: string, indexId?: string) => {
+    manualTabOverrideRef.current = true;
+    setFocusIndexTarget(indexId ? { tableId, indexId } : null);
+    requestTableFocus(tableId);
+    setCurrentTab("tables");
+  };
+
+  const handleFocusIndexHandled = React.useCallback(
+    () => setFocusIndexTarget(null),
+    [],
+  );
+
   React.useEffect(() => {
     if (!editorSidebarNavigateTargetTab) return;
     manualTabOverrideRef.current = true;
@@ -184,6 +220,13 @@ export default function EditorSidebar({
         shortLabel: "Rels",
         count: edges.length,
         icon: <GitCommitHorizontal className="h-4 w-4" />,
+      },
+      {
+        key: "indexes",
+        label: "Indexes",
+        shortLabel: "Idx",
+        count: indexCount,
+        icon: <KeyRound className="h-4 w-4" />,
       },
       {
         key: "dbml",
@@ -369,15 +412,24 @@ export default function EditorSidebar({
         <TablesTab
           nodes={nodes}
           isLocked={isLocked}
+          focusIndexTarget={focusIndexTarget}
+          onFocusIndexHandled={handleFocusIndexHandled}
         />
       </div>
       <div className={cn("h-full", currentTab !== "relationships" && "hidden")}>
         <RelationshipsTab
           nodes={nodes}
           edges={edges}
-        />
-      </div>
-      <div className={cn("h-full", currentTab !== "dbml" && "hidden")}>
+          />
+        </div>
+        <div className={cn("h-full", currentTab !== "indexes" && "hidden")}>
+          <IndexesTab
+            nodes={nodes}
+            isLocked={isLocked}
+            onFocusIndex={handleIndexFocus}
+          />
+        </div>
+        <div className={cn("h-full", currentTab !== "dbml" && "hidden")}>
         {hasOpenedDbmlTab && (
           <DbmlTab
             diagram={diagram}

@@ -79,6 +79,8 @@ const DiagramEditor = forwardRef(
       setSelectedNodeId,
       selectedEdgeId,
       setSelectedEdgeId,
+      tableFocusRequestToken,
+      tableFocusRequestNodeId,
       setLastCursorPosition,
       pasteNodes,
       clipboard,
@@ -103,6 +105,8 @@ const DiagramEditor = forwardRef(
         setSelectedNodeId: state.setSelectedNodeId,
         selectedEdgeId: state.selectedEdgeId,
         setSelectedEdgeId: state.setSelectedEdgeId,
+        tableFocusRequestToken: state.tableFocusRequestToken,
+        tableFocusRequestNodeId: state.tableFocusRequestNodeId,
         setLastCursorPosition: state.setLastCursorPosition,
         pasteNodes: state.pasteNodes,
         clipboard: state.clipboard,
@@ -288,6 +292,19 @@ const DiagramEditor = forwardRef(
         }
       }
     }, [selectedNodeId, settings.focusTableDuringSelection]);
+
+    useEffect(() => {
+      if (!tableFocusRequestNodeId || !rfInstanceRef.current) return;
+
+      const node = rfInstanceRef.current.getNode(tableFocusRequestNodeId);
+      if (!node) return;
+
+      rfInstanceRef.current.fitView({
+        nodes: [{ id: tableFocusRequestNodeId }],
+        duration: 300,
+        maxZoom: 1.2,
+      });
+    }, [tableFocusRequestToken, tableFocusRequestNodeId]);
 
     useEffect(() => {
       if (selectedEdgeId && rfInstanceRef.current && settings.focusRelDuringSelection) {

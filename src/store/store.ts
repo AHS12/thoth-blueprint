@@ -37,6 +37,9 @@ export interface StoreState {
   selectedDiagramId: number | null;
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
+  /** Incremented for one-shot table focus requests from navigation actions. */
+  tableFocusRequestToken: number;
+  tableFocusRequestNodeId: string | null;
   /** Bumped to switch the editor sidebar tab (does not open or expand the sidebar). */
   editorSidebarNavigateToken: number;
   /** Sidebar tab to show when `editorSidebarNavigateToken` changes; cleared after consumption. */
@@ -59,6 +62,7 @@ export interface StoreState {
   setSelectedDiagramId: (id: number | null) => void;
   setSelectedNodeId: (id: string | null) => void;
   setSelectedEdgeId: (id: string | null) => void;
+  requestTableFocus: (nodeId: string) => void;
   focusAiChatForTableNode: (tableId: string) => void;
   setAiChatPanelOpen: (open: boolean) => void;
   clearEditorSidebarNavigateTarget: () => void;
@@ -707,6 +711,8 @@ export const useStore = create<StoreState>()(
     selectedDiagramId: null,
     selectedNodeId: null,
     selectedEdgeId: null,
+    tableFocusRequestToken: 0,
+    tableFocusRequestNodeId: null,
     editorSidebarNavigateToken: 0,
     editorSidebarNavigateTargetTab: null,
     aiChatPinnedTableIds: [],
@@ -777,6 +783,13 @@ export const useStore = create<StoreState>()(
       }),
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
     setSelectedEdgeId: (id) => set({ selectedEdgeId: id }),
+    requestTableFocus: (nodeId) =>
+      set((state) => ({
+        selectedNodeId: nodeId,
+        selectedEdgeId: null,
+        tableFocusRequestNodeId: nodeId,
+        tableFocusRequestToken: state.tableFocusRequestToken + 1,
+      })),
     focusAiChatForTableNode: (tableId) =>
       set((s) => {
         const ids = s.aiChatPinnedTableIds.includes(tableId)

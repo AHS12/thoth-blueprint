@@ -33,6 +33,11 @@ import { ScrollArea } from "./ui/scroll-area";
 interface TablesTabProps {
     nodes: AppNode[];
     isLocked: boolean;
+    focusIndexTarget?: {
+        tableId: string;
+        indexId: string;
+    } | null;
+    onFocusIndexHandled?: () => void;
 }
 
 function SortableAccordionItem({
@@ -69,7 +74,12 @@ function SortableAccordionItem({
     );
 }
 
-export default function TablesTab({ nodes: initialNodes, isLocked }: TablesTabProps) {
+export default function TablesTab({
+    nodes: initialNodes,
+    isLocked,
+    focusIndexTarget,
+    onFocusIndexHandled,
+}: TablesTabProps) {
     const selectedNodeId = useStore((state) => state.selectedNodeId);
 
       const {
@@ -293,6 +303,12 @@ export default function TablesTab({ nodes: initialNodes, isLocked }: TablesTabPr
                                                             <TableAccordionContent
                                                                 node={node}
                                                                 onStartEdit={() => handleStartEdit(node)}
+                                                                focusIndexId={
+                                                                    focusIndexTarget?.tableId === node.id
+                                                                        ? focusIndexTarget.indexId
+                                                                        : undefined
+                                                                }
+                                                                onFocusIndexHandled={onFocusIndexHandled}
                                                             />
                                                         </AccordionContent>
                                                     </AccordionItem>
