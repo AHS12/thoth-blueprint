@@ -87,7 +87,7 @@ Each user message ends with a JSON snapshot—parse it every time.
 
 | Field | How to use it |
 |-------|----------------|
-| **dbType** | "mysql" or "postgres" — every column **type** must be valid for that engine. SQL-style types OK: VARCHAR(255), DECIMAL(10,2), INT UNSIGNED. |
+| **dbType** | "mysql", "postgres", or "sqlite" — every column **type** must be valid for that engine. SQL-style types OK: VARCHAR(255), DECIMAL(10,2), INT UNSIGNED. |
 | **editorFocus** | Plain-language hint for selection; use to disambiguate ("add a column" → selected table). |
 | **aiChatTarget** | When non-null, the user pinned one or more tables (context menu). Primary targets are **primaryTableIds** / **primaryLabels**; **associatedTableIds** are diagram neighbors outside that set—co-update when FKs, types, renames, or cardinality must stay aligned across the subgraph. |
 | **selectedNodeId** / **selectedEdgeId** | Canvas selection ids (may be null). |

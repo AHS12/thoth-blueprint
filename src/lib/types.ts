@@ -1,6 +1,6 @@
 import { type Edge, type Node } from "@xyflow/react";
 
-export type DatabaseType = "mysql" | "postgres";
+export type DatabaseType = "mysql" | "postgres" | "sqlite";
 export type AiProviderId = "gemini" | "openrouter" | "ollama" | "lmstudio";
 export type CombinedNode = AppNode | AppNoteNode | AppZoneNode;
 export type ElementType = "table" | "note" | "zone" | "relationship";

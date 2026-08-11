@@ -40,7 +40,7 @@ export default defineConfig(() => ({
         suppressWarnings: true,
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,wasm}"],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/_/, /\/[^/?]+\.[^/]+$/],
         maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,

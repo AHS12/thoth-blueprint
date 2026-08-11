@@ -85,6 +85,8 @@ export function getLaravelColumnType(type: string, columnName: string): string {
       return "char";
     case "TEXT":
       return "text";
+    case "CLOB":
+      return "text";
     case "LONGTEXT":
       return "longText";
     case "MEDIUMTEXT":
@@ -106,6 +108,7 @@ export function getLaravelColumnType(type: string, columnName: string): string {
     case "FLOAT":
       return "float";
     case "DOUBLE":
+    case "DOUBLE PRECISION":
       return "double";
     case "BOOLEAN":
     case "BOOL":

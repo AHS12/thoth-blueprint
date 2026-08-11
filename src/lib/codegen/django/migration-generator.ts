@@ -2,6 +2,7 @@ import {
   type AppEdge,
   type AppNode,
   type Column,
+  type DatabaseType,
   type Diagram,
 } from "@/lib/types";
 import {
@@ -132,7 +133,7 @@ class Migration(migrations.Migration):
 
 function generateEnumOperations(
   nodes: AppNode[],
-  dbType: "mysql" | "postgres"
+  dbType: DatabaseType
 ): string[] {
   if (dbType !== "postgres") return [];
   const operations: string[] = [];
@@ -165,7 +166,7 @@ function generateCreateModelOperation(
   node: AppNode,
   allNodes: AppNode[],
   edges: AppEdge[],
-  dbType: "mysql" | "postgres",
+  dbType: DatabaseType,
   appName: string,
   omitForeignKeys: boolean
 ): string {
@@ -199,7 +200,7 @@ function generateFieldDefinition(
   currentNode: AppNode,
   allNodes: AppNode[],
   edges: AppEdge[],
-  dbType: "mysql" | "postgres",
+  dbType: DatabaseType,
   appName: string,
   omitForeignKeys: boolean
 ): string {
@@ -239,12 +240,12 @@ function generateFieldDefinition(
 
 function generatePostOperations(
   nodes: AppNode[],
-  dbType: "mysql" | "postgres"
+  dbType: DatabaseType
 ): string[] {
   const operations: string[] = [];
   for (const node of nodes) {
     const tableName = toDjangoTableName(node.data.label);
-    const quote = dbType === "postgres" ? '"' : "`";
+    const quote = dbType === "mysql" ? "`" : '"';
 
     if (node.data.indices) {
       for (const index of node.data.indices) {
