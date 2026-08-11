@@ -20,6 +20,8 @@ import {
   callLocalDiagramAssistant,
   listLocalAiModels,
 } from "@/lib/ai/localProviders";
+import { DIAGRAM_ASSISTANT_INSTRUCTION } from "@/lib/ai/diagramAssistantInstruction";
+import { retryAiRequest } from "@/lib/ai/retryAiRequest";
 import type { AiModel, LocalAiProviderId } from "@/lib/ai/aiProviderTypes";
 import {
   loadAiKeyFromSession,
@@ -75,91 +77,7 @@ import {
 import { ScrollArea } from "./ui/scroll-area";
 import { Textarea } from "./ui/textarea";
 
-const SYSTEM_INSTRUCTION = `You are the in-app schema copilot for **ThothBlueprint**: a visual ER diagram editor (tables, columns, relationships). Behave like a senior DB designer: clear naming, sensible keys, normalization when it helps, and pragmatic tradeoffs users can maintain.
-
-## Mental model
-- You emit a JSON **patch**, not raw DDL. The app validates and applies updates **atomically** (every operation succeeds or none are applied).
-- Relationships connect **two columns**; their **type** strings must match as stored after normalization.
-- **Out of scope for this API** (mention in **summary** only): SQL indexes, check constraints, triggers, views, notes/zones on the canvas, data migration scripts. Users can add indexes in the table UI or export SQL elsewhere.
-
-## Reading: Current diagram (JSON)
-Each user message ends with a JSON snapshot—parse it every time.
-
-| Field | How to use it |
-|-------|----------------|
-| **dbType** | "mysql", "postgres", or "sqlite" — every column **type** must be valid for that engine. SQL-style types OK: VARCHAR(255), DECIMAL(10,2), INT UNSIGNED. |
-| **editorFocus** | Plain-language hint for selection; use to disambiguate ("add a column" → selected table). |
-| **aiChatTarget** | When non-null, the user pinned one or more tables (context menu). Primary targets are **primaryTableIds** / **primaryLabels**; **associatedTableIds** are diagram neighbors outside that set—co-update when FKs, types, renames, or cardinality must stay aligned across the subgraph. |
-| **selectedNodeId** / **selectedEdgeId** | Canvas selection ids (may be null). |
-| **tables[]** | Non-deleted tables: **id** (node id), **label**, **columns** with **id**, **name**, **type**, **pk**, **nullable**. |
-| **relationships[]** | Edges: **id**, endpoints, **relationship** cardinality. |
-
-**Greenfield (tables is [])**: output **create_table** for each entity first, then **create_relationship**. Runtime assigns table node ids—you may reference new tables by **label** and columns by **name** in the same **operations** array; the resolver maps them.
-
-**Existing data**: prefer **tables[].id** and **columns[].id** from JSON for edits to avoid stale labels.
-
-## Response format (strict)
-One top-level JSON object only—no markdown code fences, no leading/trailing prose.
-
-{ "summary": "…", "operations": [ … ] }
-
-- **summary**: Always substantive—what changed, design rationale, assumptions, risks, or next steps. Use short markdown (bullets, **bold**). If **operations** is [], **summary** carries the full answer.
-- **operations**: Ordered steps. On doubt or unsupported requests, use **operations**: [] and explain in **summary**.
-
-## Capability catalog (five operations)
-
-**1) create_table** — Add a table.
-{ "op":"create_table", "label":"snake_case_name", "columns":[ ColumnInput, … ], "position"?:{ "x": number, "y": number } }
-- **label**: unique (case-insensitive). Prefer consistent plural entity names (**users**, **blog_posts**).
-- **columns**: at least one; include a PK (**pk**: true, **nullable**: false) unless you document why not in **summary**.
-
-**2) update_table** — Change a table.
-{ "op":"update_table", "tableId":"<tables[].id OR label>", "label"?, "columns"?, "comment"?|null }
-- **columns** if present = **full replacement** list: every surviving column must appear with its **id** preserved; new columns omit **id**.
-- Table rename: **label**. Comment only: omit **columns**; clear comment with **comment**: null.
-
-**3) delete_table** — Remove a table.
-{ "op":"delete_table", "tableId":"<id OR label>" }
-- Edges to that table are stripped; you may still **delete_relationship** first for clarity.
-
-**4) create_relationship** — Edge between two columns.
-{ "op":"create_relationship", "sourceTableId","sourceColumnId","targetTableId","targetColumnId","relationshipType":"one-to-one"|"one-to-many"|"many-to-one"|"many-to-many" }
-- Tables: **id** or **label** (including tables created earlier in this **operations** array).
-- Columns: **id** or **name** on that table.
-- **relationshipType**: match the business (FK usually on the "many" side). No duplicate edge for the same column pair.
-
-**5) delete_relationship** — Remove an edge.
-{ "op":"delete_relationship", "edgeId":"<relationships[].id>" }
-
-## ColumnInput
-{ "id"?, "name", "type", "pk"?, "nullable"?, "length"?, "precision"?, "scale"?, "comment"?, "isUnsigned"?, "isAutoIncrement"?, "isUnique"?, "defaultValue"?, "enumValues"? }
-
-**ThothBlueprint-friendly patterns**
-- **Naming**: snake_case; FKs often **user_id**-style names referencing the parent table's PK column.
-- **Surrogate PKs**: BIGINT / UUID / SERIAL family per dbType; align FK types to referenced PKs.
-- **Junction / M–M**: separate table + FK columns + two relationships to parents.
-- **Timestamps**: **created_at**, **updated_at** with appropriate **DATETIME** / **TIMESTAMPTZ** and **nullable** false where system-managed.
-
-## dbType hints
-- **mysql**: INT, BIGINT, VARCHAR, TEXT, DATETIME, TIMESTAMP, JSON, ENUM, DECIMAL, etc.
-- **postgres**: UUID, TEXT, VARCHAR, BOOLEAN, JSONB, TIMESTAMPTZ, SERIAL/BIGSERIAL, ARRAY when justified.
-
-## Operation order (discipline)
-1. create_table (new entities)  
-2. update_table (mutations)  
-3. create_relationship (endpoints must exist in the running draft)  
-4. delete_relationship → delete_table for teardowns  
-
-## Pre-flight checklist
-- Full column list on every **update_table** that sends **columns**?
-- Every **create_relationship** references tables/columns that exist or were created above?
-- FK column **type** pairs match?
-- No duplicate relationship for the same two columns?
-
-## When operations must be []
-- Questions, reviews, comparisons, or "how should I…?" with no edit.
-- Diagram **locked** (tell user to unlock).
-- Needs unsupported features—explain alternatives in **summary**.`;
+const MAX_PATCH_REPAIR_ATTEMPTS = 2;
 
 function parseModelJson(text: string): unknown {
   let t = text.trim();
@@ -172,7 +90,13 @@ function parseModelJson(text: string): unknown {
   return JSON.parse(t) as unknown;
 }
 
-function AiChatThinkingIndicator() {
+function AiChatThinkingIndicator({
+  status,
+  text,
+}: {
+  status: string;
+  text: string;
+}) {
   return (
     <div
       className="flex flex-row gap-2.5"
@@ -191,12 +115,14 @@ function AiChatThinkingIndicator() {
       </div>
       <div
         className={cn(
-          "max-w-[min(100%,20rem)] rounded-2xl rounded-tl-md border border-primary/15 px-3.5 py-2.5 shadow-sm",
-          "bg-gradient-to-r from-muted/70 via-primary/[0.12] to-muted/70 bg-[length:400%_100%] animate-ai-chat-shimmer",
+          "max-w-[min(100%,32rem)] rounded-2xl rounded-tl-md border border-primary/15 px-3.5 py-2.5 shadow-sm",
+          text
+            ? "bg-muted/70"
+            : "bg-gradient-to-r from-muted/70 via-primary/[0.12] to-muted/70 bg-[length:400%_100%] animate-ai-chat-shimmer",
         )}
       >
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-muted-foreground">Thinking about your schema</p>
+          <p className="text-sm text-muted-foreground">{status}</p>
           <span className="flex items-center gap-1 pt-0.5" aria-hidden>
             {[0, 1, 2].map((i) => (
               <span
@@ -207,6 +133,11 @@ function AiChatThinkingIndicator() {
             ))}
           </span>
         </div>
+        {text && (
+          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/60 bg-background/70 p-2 text-[10px] leading-relaxed text-foreground/80">
+            {text}
+          </pre>
+        )}
       </div>
     </div>
   );
@@ -240,6 +171,8 @@ export default function AiChatTab({
   const [chatHydrated, setChatHydrated] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [aiStatus, setAiStatus] = useState("Thinking about your schema");
+  const [streamingText, setStreamingText] = useState("");
 
   const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
   const [openRouterModelsLoading, setOpenRouterModelsLoading] = useState(false);
@@ -491,34 +424,35 @@ export default function AiChatTab({
     if (messages.length === 0 && !sending) return;
     const id = requestAnimationFrame(() => {
       chatScrollEndRef.current?.scrollIntoView({
-        behavior: "smooth",
+        behavior: sending ? "auto" : "smooth",
         block: "end",
       });
     });
     return () => cancelAnimationFrame(id);
-  }, [chatHydrated, messages, sending]);
+  }, [chatHydrated, messages, sending, streamingText]);
 
   const pinnedLabelsPhrase = useMemo(
     () => pinnedTablesForChips.map((p) => `"${p.label}"`).join(", "),
     [pinnedTablesForChips],
   );
 
-  const contextJson = useMemo(() => {
+  const diagramContext = useMemo(() => {
     if (!diagram) return "";
-    const ctx = buildDiagramContext(
+    return buildDiagramContext(
       diagram.data,
       diagram.dbType,
       selectedNodeId,
       selectedEdgeId,
       aiChatPinnedTableIds,
     );
-    return diagramContextToPromptJson(ctx);
   }, [
     diagram,
     selectedNodeId,
     selectedEdgeId,
     aiChatPinnedTableIds,
   ]);
+  const contextStats =
+    typeof diagramContext === "string" ? null : diagramContext.contextStats;
 
   const keyStatus = useMemo(() => {
     const providerName =
@@ -687,6 +621,8 @@ export default function AiChatTab({
     const userMessage = text;
     setMessages((m) => [...m, { role: "user", content: userMessage }]);
     setSending(true);
+    setAiStatus("Generating patch");
+    setStreamingText("");
 
     try {
       const history: { role: "user" | "model"; text: string }[] =
@@ -695,89 +631,152 @@ export default function AiChatTab({
           text: msg.content,
         }));
 
-      const scopeHint =
-        pinnedLabelsPhrase.length > 0
-          ? `The user scoped this chat to these tables: ${pinnedLabelsPhrase}, including their diagram neighbors (see aiChatTarget in the JSON). Prefer coordinated schema updates across that subgraph when relevant.\n\n`
-          : "";
+       const scopeHint =
+         pinnedLabelsPhrase.length > 0
+           ? `The user scoped this chat to these tables: ${pinnedLabelsPhrase}, including their diagram neighbors (see aiChatTarget in the JSON). Prefer coordinated schema updates across that subgraph when relevant.\n\n`
+           : "";
+       const requestContext = buildDiagramContext(
+         diagram.data,
+         diagram.dbType,
+         selectedNodeId,
+         selectedEdgeId,
+         aiChatPinnedTableIds,
+         { focusText: userMessage },
+       );
+       const requestContextJson = diagramContextToPromptJson(requestContext);
 
-      const augmentedUser = `${userMessage}
+       const augmentedUser = `${userMessage}
 
 ${scopeHint}Below is the live diagram snapshot — use it as the only source of truth for ids and column types. If "editorFocus" or "aiChatTarget" is set, treat them as intent anchors when the message is underspecified.
 
 Current diagram (JSON):
-${contextJson}`;
+${requestContextJson}`;
 
-       const rawText =
-         activeProvider === "gemini"
-           ? await callGeminiDiagramAssistant({
-               apiKey: key,
-               model: activeModel,
-               systemInstruction: SYSTEM_INSTRUCTION,
-               history,
-               userMessage: augmentedUser,
-             })
-           : activeProvider === "openrouter"
-             ? await callOpenRouterDiagramAssistant({
-               apiKey: key,
-               model: activeModel,
-               supportsResponseFormat:
-                 openRouterModels.find((model) => model.id === activeModel)
-                   ?.supportsResponseFormat ?? false,
-               systemInstruction: SYSTEM_INSTRUCTION,
-               history,
-               userMessage: augmentedUser,
-             })
-             : await callLocalDiagramAssistant({
-                 provider: activeLocalProvider!,
-                 baseUrl: activeLocalBaseUrl,
-                 model: activeModel,
-                 systemInstruction: SYSTEM_INSTRUCTION,
-                 history,
-                 userMessage: augmentedUser,
-               });
+       let streamedChars = 0;
+       const handleStreamText = (chunk: string) => {
+         streamedChars += chunk.length;
+         setStreamingText((current) => current + chunk);
+         setAiStatus(`Generating patch (${streamedChars.toLocaleString()} chars)`);
+       };
+       const requestModel = (requestMessage: string) =>
+         retryAiRequest(
+           () =>
+             activeProvider === "gemini"
+               ? callGeminiDiagramAssistant({
+                   apiKey: key!,
+                   model: activeModel,
+                   systemInstruction: DIAGRAM_ASSISTANT_INSTRUCTION,
+                   history,
+                   userMessage: requestMessage,
+                   onText: handleStreamText,
+                 })
+               : activeProvider === "openrouter"
+                 ? callOpenRouterDiagramAssistant({
+                     apiKey: key!,
+                     model: activeModel,
+                     supportsResponseFormat:
+                       openRouterModels.find((model) => model.id === activeModel)
+                         ?.supportsResponseFormat ?? false,
+                     systemInstruction: DIAGRAM_ASSISTANT_INSTRUCTION,
+                     history,
+                     userMessage: requestMessage,
+                     onText: handleStreamText,
+                   })
+                 : callLocalDiagramAssistant({
+                     provider: activeLocalProvider!,
+                     baseUrl: activeLocalBaseUrl,
+                     model: activeModel,
+                     systemInstruction: DIAGRAM_ASSISTANT_INSTRUCTION,
+                     history,
+                     userMessage: requestMessage,
+                     onText: handleStreamText,
+                   }),
+           {
+             onRetry: (attempt) => {
+               setStreamingText("");
+               setAiStatus(`Retrying provider (attempt ${attempt} of 2)`);
+             },
+           },
+         );
 
-      let parsed: unknown;
-      try {
-        parsed = parseModelJson(rawText);
-      } catch {
-        showError("Model did not return valid JSON.");
-        setMessages((m) => [
-          ...m,
-          {
-            role: "model",
-            content:
-              "Sorry, I could not parse the model response as JSON. Raw output:\n\n```\n" +
-              rawText.slice(0, 2000) +
-              (rawText.length > 2000 ? "\n…" : "") +
-              "\n```",
-          },
-        ]);
-        return;
-      }
+       let requestMessage = augmentedUser;
+       let rawText = "";
+       let parsed: unknown = null;
+       let applyResult: ReturnType<typeof applyAiDiagramOperations> | null = null;
+       let lastError = "Model did not return a valid patch.";
 
-      const applyResult = applyAiDiagramOperations(parsed);
-      if (!applyResult.ok) {
-        showError(applyResult.error);
-        const summary =
-          typeof parsed === "object" &&
-          parsed !== null &&
-          "summary" in parsed &&
-          typeof (parsed as { summary?: unknown }).summary === "string"
-            ? (parsed as { summary: string }).summary
-            : null;
-        setMessages((m) => [
-          ...m,
-          {
-            role: "model",
-            content:
-              (summary ? `${summary}\n\n` : "") +
-              `**Changes were not applied:** ${applyResult.error}`,
-          },
-        ]);
-        return;
-      }
+       for (let attempt = 0; attempt <= MAX_PATCH_REPAIR_ATTEMPTS; attempt++) {
+         streamedChars = 0;
+         setStreamingText("");
+         if (attempt > 0) {
+           setAiStatus(
+             `Repairing patch (attempt ${attempt} of ${MAX_PATCH_REPAIR_ATTEMPTS})`,
+           );
+         }
+         rawText = await requestModel(requestMessage);
 
-      const opCount =
+         try {
+           parsed = parseModelJson(rawText);
+         } catch {
+           lastError = "Model did not return valid JSON.";
+           if (attempt === MAX_PATCH_REPAIR_ATTEMPTS) break;
+           requestMessage = `${augmentedUser}
+
+CORRECTION REQUIRED:
+The previous response was not valid JSON. Return one top-level JSON object with summary and operations only. Do not use markdown fences.
+
+Previous response:
+${rawText.slice(0, 4000)}`;
+           continue;
+         }
+
+         setAiStatus("Validating patch");
+         applyResult = applyAiDiagramOperations(parsed);
+         if (applyResult.ok || applyResult.stage === "precondition") break;
+
+         lastError = applyResult.error;
+         if (attempt === MAX_PATCH_REPAIR_ATTEMPTS) break;
+         const operationDetails =
+           applyResult.operationIndex !== undefined
+             ? `Operation ${applyResult.operationIndex + 1} failed after ${applyResult.appliedOperations ?? 0} earlier operation(s).`
+             : "The proposed patch failed validation.";
+         requestMessage = `${augmentedUser}
+
+CORRECTION REQUIRED:
+${operationDetails}
+${applyResult.error}
+No changes were committed. Return a complete corrected patch, not only the failed operation.
+
+Previous response:
+${rawText.slice(0, 4000)}`;
+       }
+
+       if (!applyResult?.ok) {
+         showError(lastError);
+         const summary =
+           typeof parsed === "object" &&
+           parsed !== null &&
+           "summary" in parsed &&
+           typeof (parsed as { summary?: unknown }).summary === "string"
+             ? (parsed as { summary: string }).summary
+             : null;
+         const rawOutput =
+           !applyResult && rawText
+             ? `\n\nRaw output:\n\n\`\`\`\n${rawText.slice(0, 2000)}${rawText.length > 2000 ? "\n..." : ""}\n\`\`\``
+             : "";
+         setMessages((m) => [
+           ...m,
+           {
+             role: "model",
+             content:
+               (summary ? `${summary}\n\n` : "") +
+               `**Changes were not applied:** ${lastError}${rawOutput}`,
+           },
+         ]);
+         return;
+       }
+
+       const opCount =
         parsed &&
         typeof parsed === "object" &&
         parsed !== null &&
@@ -811,15 +810,19 @@ ${contextJson}`;
           content: `Request failed: ${msg}`,
         },
       ]);
-    } finally {
-      setSending(false);
-    }
+      } finally {
+        setSending(false);
+        setAiStatus("Thinking about your schema");
+        setStreamingText("");
+      }
   }, [
     draft,
     diagram,
     isLocked,
     messages,
-    contextJson,
+    selectedNodeId,
+    selectedEdgeId,
+    aiChatPinnedTableIds,
     applyAiDiagramOperations,
     pinnedLabelsPhrase,
     activeModel,
@@ -893,6 +896,23 @@ ${contextJson}`;
           {activeModel || GEMINI_DIAGRAM_MODEL}
         </Badge>
       )}
+      {contextStats && (
+        <Badge
+          variant="outline"
+          className={cn(
+            "border-border/80 text-[10px] font-normal text-muted-foreground",
+            contextStats.truncated &&
+              "border-amber-500/40 text-amber-700 dark:text-amber-300",
+          )}
+          title={`${contextStats.includedTables} of ${contextStats.totalTables} tables included; sent context is approximately ${contextStats.estimatedTokens.toLocaleString()} tokens and the full diagram is approximately ${contextStats.sourceEstimatedTokens.toLocaleString()} tokens`}
+        >
+          Context ~{contextStats.estimatedTokens.toLocaleString()}
+          {contextStats.truncated &&
+            ` / ~${contextStats.sourceEstimatedTokens.toLocaleString()}`}
+          {" tokens"}
+          {contextStats.truncated ? " · trimmed" : ""}
+        </Badge>
+      )}
       <Button
         type="button"
         variant="ghost"
@@ -924,7 +944,7 @@ ${contextJson}`;
   }
 
   const messageList = (
-    <div className="min-w-0 space-y-4 p-4 pb-2">
+    <div className="min-w-0 space-y-4 p-4 pb-6">
       {messages.length === 0 && !sending ? (
         <div className="rounded-2xl border border-dashed bg-muted/20 px-4 py-10 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/80 text-muted-foreground">
@@ -996,7 +1016,9 @@ ${contextJson}`;
               </div>
             </div>
           ))}
-          {sending && <AiChatThinkingIndicator />}
+          {sending && (
+            <AiChatThinkingIndicator status={aiStatus} text={streamingText} />
+          )}
           <div
             ref={chatScrollEndRef}
             className="h-px w-full shrink-0"

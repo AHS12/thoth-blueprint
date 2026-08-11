@@ -18,6 +18,18 @@ export interface DiagramContextPayload {
       type: string;
       pk?: boolean;
       nullable?: boolean;
+      comment?: string;
+      defaultValue?: string | number | boolean | null;
+      isUnique?: boolean;
+      isAutoIncrement?: boolean;
+    }[];
+    indices: {
+      id: string;
+      name: string;
+      columns: string[];
+      columnIds: string[];
+      isUnique?: boolean;
+      type?: string;
     }[];
   }[];
   relationships: {
@@ -36,6 +48,23 @@ export interface DiagramContextPayload {
     associatedTableIds: string[];
     associatedTableLabels: string[];
   } | null;
+  contextStats: {
+    totalTables: number;
+    includedTables: number;
+    estimatedTokens: number;
+    sourceEstimatedTokens: number;
+    maxCharacters: number;
+    truncated: boolean;
+  };
+}
+
+type DiagramContextOptions = {
+  maxCharacters?: number;
+  focusText?: string;
+};
+
+function searchKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim();
 }
 
 export function buildDiagramContext(
@@ -45,6 +74,7 @@ export function buildDiagramContext(
   selectedEdgeId: string | null,
   /** Pinned tables from "Chat with AI" — adds scope + neighbor union to the payload. */
   aiChatPinnedTableIds?: string[] | null,
+  options: DiagramContextOptions = {},
 ): DiagramContextPayload {
   const tables = (data.nodes ?? [])
     .filter((n) => n.type === "table" && !n.data.isDeleted)
@@ -58,6 +88,22 @@ export function buildDiagramContext(
         type: c.type,
         ...(c.pk !== undefined ? { pk: c.pk } : {}),
         ...(c.nullable !== undefined ? { nullable: c.nullable } : {}),
+        ...(c.comment ? { comment: c.comment } : {}),
+        ...(c.defaultValue !== undefined ? { defaultValue: c.defaultValue } : {}),
+        ...(c.isUnique !== undefined ? { isUnique: c.isUnique } : {}),
+        ...(c.isAutoIncrement !== undefined
+          ? { isAutoIncrement: c.isAutoIncrement }
+          : {}),
+      })),
+      indices: (n.data.indices ?? []).map((index) => ({
+        id: index.id,
+        name: index.name,
+        columns: index.columns.map(
+          (columnId) => n.data.columns?.find((column) => column.id === columnId)?.name ?? columnId,
+        ),
+        columnIds: index.columns,
+        ...(index.isUnique !== undefined ? { isUnique: index.isUnique } : {}),
+        ...(index.type !== undefined ? { type: index.type } : {}),
       })),
     }));
 
@@ -145,7 +191,8 @@ export function buildDiagramContext(
   }
   const editorFocus = focusParts.length > 0 ? focusParts.join(" ") : null;
 
-  return {
+  const maxCharacters = options.maxCharacters ?? 24000;
+  const basePayload = {
     dbType,
     selectedNodeId,
     selectedEdgeId,
@@ -154,8 +201,101 @@ export function buildDiagramContext(
     relationships,
     aiChatTarget,
   };
+
+  const fullJsonLength = JSON.stringify(basePayload).length;
+  if (fullJsonLength <= maxCharacters) {
+    return {
+      ...basePayload,
+      contextStats: {
+        totalTables: tables.length,
+        includedTables: tables.length,
+        estimatedTokens: Math.ceil(fullJsonLength / 4),
+        sourceEstimatedTokens: Math.ceil(fullJsonLength / 4),
+        maxCharacters,
+        truncated: false,
+      },
+    };
+  }
+
+  const priorityIds = new Set<string>([
+    ...(aiChatTarget?.primaryTableIds ?? []),
+    ...(aiChatTarget?.associatedTableIds ?? []),
+    ...(selectedNodeId ? [selectedNodeId] : []),
+  ]);
+  const focusKey = searchKey(options.focusText ?? "");
+  const focusTokens = focusKey.split(" ").filter((token) => token.length >= 3);
+  if (focusKey) {
+    for (const table of tables) {
+      const tableKey = searchKey(table.label);
+      const columnKeys = table.columns.map((column) => searchKey(column.name));
+      const indexKeys = table.indices.map((index) => searchKey(index.name));
+      if (
+        focusKey.includes(tableKey) ||
+        tableKey.includes(focusKey) ||
+        focusTokens.some((token) => tableKey.includes(token)) ||
+        columnKeys.some((key) => focusKey.includes(key) || key.includes(focusKey)) ||
+        columnKeys.some((key) => focusTokens.some((token) => key.includes(token))) ||
+        indexKeys.some((key) => focusKey.includes(key) || key.includes(focusKey))
+      ) {
+        priorityIds.add(table.id);
+      }
+    }
+  }
+  const orderedTables = [...tables].sort(
+    (a, b) => Number(priorityIds.has(b.id)) - Number(priorityIds.has(a.id)),
+  );
+  const selectedTables: DiagramContextPayload["tables"] = [];
+  const compactTables: DiagramContextPayload["tables"] = [];
+
+  for (const table of orderedTables) {
+    if (priorityIds.has(table.id)) {
+      selectedTables.push(table);
+      continue;
+    }
+    compactTables.push({
+      id: table.id,
+      label: table.label,
+      columns: table.columns.map((column) => ({
+        id: column.id,
+        name: column.name,
+        type: column.type,
+        ...(column.pk !== undefined ? { pk: column.pk } : {}),
+        ...(column.nullable !== undefined ? { nullable: column.nullable } : {}),
+      })),
+      indices: table.indices.map((index) => ({
+        id: index.id,
+        name: index.name,
+        columns: index.columns,
+        columnIds: index.columnIds,
+        ...(index.isUnique !== undefined ? { isUnique: index.isUnique } : {}),
+        ...(index.type !== undefined ? { type: index.type } : {}),
+      })),
+    });
+  }
+
+  const compactPayload = () => ({
+    ...basePayload,
+    tables: [...selectedTables, ...compactTables],
+  });
+  while (compactTables.length > 0 && JSON.stringify(compactPayload()).length > maxCharacters) {
+    compactTables.pop();
+  }
+
+  const trimmedPayload = compactPayload();
+  const trimmedJsonLength = JSON.stringify(trimmedPayload).length;
+  return {
+    ...trimmedPayload,
+    contextStats: {
+      totalTables: tables.length,
+      includedTables: trimmedPayload.tables.length,
+      estimatedTokens: Math.ceil(trimmedJsonLength / 4),
+      sourceEstimatedTokens: Math.ceil(fullJsonLength / 4),
+      maxCharacters,
+      truncated: true,
+    },
+  };
 }
 
 export function diagramContextToPromptJson(ctx: DiagramContextPayload): string {
-  return JSON.stringify(ctx, null, 2);
+  return JSON.stringify(ctx);
 }

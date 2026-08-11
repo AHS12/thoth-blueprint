@@ -18,6 +18,7 @@ import {
   type DiagramCheckpoint,
 } from "@/lib/types";
 import { aiPatchSchema } from "@/lib/ai/diagramPatchSchema";
+import type { AiOperation } from "@/lib/ai/diagramPatchSchema";
 import { simulateAiPatch } from "@/lib/ai/simulateAiPatch";
 import { findExistingRelationship } from "@/lib/utils";
 import {
@@ -97,7 +98,14 @@ export interface StoreState {
     raw: unknown,
   ) =>
     | { ok: true; summary?: string }
-    | { ok: false; error: string };
+    | {
+        ok: false;
+        error: string;
+        stage: "precondition" | "schema" | "simulation";
+        operationIndex?: number;
+        operation?: AiOperation;
+        appliedOperations?: number;
+      };
   undoDelete: () => void;
   batchUpdateNodes: (nodes: (AppNode | AppNoteNode | AppZoneNode)[]) => void;
   copyNodes: (nodes: (AppNode | AppNoteNode | AppZoneNode)[]) => void;
@@ -1339,16 +1347,25 @@ export const useStore = create<StoreState>()(
         state.selectedDiagramId,
       );
       if (!diagram?.id) {
-        return { ok: false, error: "No diagram selected." };
+        return { ok: false, error: "No diagram selected.", stage: "precondition" };
       }
       if (diagram.data.isLocked) {
-        return { ok: false, error: "Diagram is locked." };
+        return { ok: false, error: "Diagram is locked.", stage: "precondition" };
       }
 
       const parsed = aiPatchSchema.safeParse(raw);
       if (!parsed.success) {
-        const msg = parsed.error.issues.map((i) => i.message).join("; ");
-        return { ok: false, error: msg || "Invalid AI response format." };
+        const msg = parsed.error.issues
+          .map((issue) => {
+            const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
+            return `${path}${issue.message}`;
+          })
+          .join("; ");
+        return {
+          ok: false,
+          error: msg || "Invalid AI response format.",
+          stage: "schema",
+        };
       }
 
       try {
@@ -1361,7 +1378,14 @@ export const useStore = create<StoreState>()(
 
         const sim = simulateAiPatch(diagram.data, diagram.dbType, operations);
         if (!sim.ok) {
-          return { ok: false, error: sim.error };
+          return {
+            ok: false,
+            error: sim.error,
+            stage: "simulation",
+            operationIndex: sim.operationIndex,
+            operation: sim.operation,
+            appliedOperations: sim.appliedOperations,
+          };
         }
 
         set((s) =>
@@ -1382,7 +1406,7 @@ export const useStore = create<StoreState>()(
       } catch (e) {
         console.error("applyAiDiagramOperations:", e);
         const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, error: msg };
+        return { ok: false, error: msg, stage: "simulation" };
       }
     },
     undoDelete: () => {
