@@ -400,7 +400,13 @@ function applyOneOp(
       return { ok: false, error: `Column name "${changes.name}" already exists.` };
     }
     const result = columnFromInput(
-      { ...column, ...changes, id: column.id },
+      {
+        ...column,
+        ...changes,
+        id: column.id,
+        name: changes.name ?? column.name,
+        type: changes.type ?? column.type,
+      },
       dbType,
       column,
       { allowAdhocId: false },
@@ -451,13 +457,18 @@ function applyOneOp(
         columns: index.columns.filter((columnId) => columnId !== column.id),
       }))
       .filter((index) => index.columns.length > 0);
+    const nextData = {
+      ...node.data,
+      columns: nextColumns,
+    };
+    if (nextIndices.length > 0) {
+      nextData.indices = nextIndices;
+    } else {
+      delete nextData.indices;
+    }
     nodes[idx] = {
       ...node,
-      data: {
-        ...node.data,
-        columns: nextColumns,
-        ...(nextIndices.length ? { indices: nextIndices } : { indices: undefined }),
-      },
+      data: nextData,
     };
     return { ok: true, data: { ...draft, nodes } };
   }
@@ -636,11 +647,12 @@ function applyOneOp(
         error: `Unknown index "${op.indexId}" on table "${node.data.label}".`,
       };
     }
+    const nextName = op.name;
     if (
-      op.name &&
+      nextName &&
       (node.data.indices ?? []).some(
         (index) =>
-          index.id !== current.id && normalizeRef(index.name) === normalizeRef(op.name),
+          index.id !== current.id && normalizeRef(index.name) === normalizeRef(nextName),
       )
     ) {
       return { ok: false, error: `Index name "${op.name}" already exists.` };

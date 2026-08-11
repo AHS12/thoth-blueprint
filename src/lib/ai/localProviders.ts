@@ -13,6 +13,8 @@ interface OllamaTagsResponse {
   }>;
 }
 
+type OllamaModel = NonNullable<OllamaTagsResponse["models"]>[number];
+
 interface OpenAiModelsResponse {
   data?: Array<{ id?: unknown; owned_by?: unknown }>;
 }
@@ -91,7 +93,7 @@ export async function listLocalAiModels(
     if (provider === "ollama") {
       const models = (body as OllamaTagsResponse).models ?? [];
       return models
-        .filter((model): model is { name: string; details?: OllamaTagsResponse["models"][number]["details"] } => typeof model.name === "string")
+         .filter((model): model is OllamaModel & { name: string } => typeof model.name === "string")
         .map((model) => {
           const details = model.details;
           const suffix = [details?.family, details?.parameter_size, details?.quantization_level]

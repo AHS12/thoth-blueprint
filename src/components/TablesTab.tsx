@@ -35,7 +35,7 @@ interface TablesTabProps {
     isLocked: boolean;
     focusIndexTarget?: {
         tableId: string;
-        indexId: string;
+        indexId?: string;
     } | null;
     onFocusIndexHandled?: () => void;
 }
@@ -303,12 +303,13 @@ export default function TablesTab({
                                                             <TableAccordionContent
                                                                 node={node}
                                                                 onStartEdit={() => handleStartEdit(node)}
-                                                                focusIndexId={
-                                                                    focusIndexTarget?.tableId === node.id
-                                                                        ? focusIndexTarget.indexId
-                                                                        : undefined
-                                                                }
-                                                                onFocusIndexHandled={onFocusIndexHandled}
+                                                                {...(focusIndexTarget?.tableId === node.id &&
+                                                                focusIndexTarget.indexId
+                                                                    ? { focusIndexId: focusIndexTarget.indexId }
+                                                                    : {})}
+                                                                 {...(onFocusIndexHandled
+                                                                     ? { onFocusIndexHandled }
+                                                                     : {})}
                                                             />
                                                         </AccordionContent>
                                                     </AccordionItem>

@@ -269,7 +269,6 @@ function buildColumn(
 function createTableNode(
   table: SqliteTableInfo,
   index: number,
-  totalTables: number,
   columnYOffset: number[],
   diagnostics: Diagnostic[],
 ): AppNode {
@@ -309,7 +308,8 @@ function createTableNode(
     }
 
     if (sqliteIndex.isUnique && indexColumns.length === 1) {
-      indexColumns[0].isUnique = true;
+      const firstIndexColumn = indexColumns[0];
+      if (firstIndexColumn) firstIndexColumn.isUnique = true;
     }
 
     // SQLite creates sqlite_autoindex_* for inline UNIQUE constraints. Keep
@@ -442,8 +442,9 @@ function buildEdges(
     }
 
     const relationship = determineRelationship(sourceColumns, targetColumns, sourceNode, targetNode);
-    return sourceColumns.map((sourceColumn, index) => {
+    return sourceColumns.flatMap((sourceColumn, index) => {
       const targetColumn = targetColumns[index];
+      if (!targetColumn) return [];
       const edgeData: EdgeData = {
         relationship,
         constraintName: `fk_${sourceNode.data.label}_${firstRow.id}`,
@@ -453,7 +454,7 @@ function buildEdges(
         ...(firstRow.onDelete !== "NO ACTION" ? { onDelete: firstRow.onDelete } : {}),
         ...(firstRow.onUpdate !== "NO ACTION" ? { onUpdate: firstRow.onUpdate } : {}),
       };
-      return {
+      return [{
         id: uuid(),
         source: sourceNode.id,
         target: targetNode.id,
@@ -461,7 +462,7 @@ function buildEdges(
         targetHandle: `${targetColumn.id}-left-target`,
         type: "custom",
         data: edgeData,
-      };
+      }];
     });
   });
 }
@@ -503,7 +504,7 @@ export async function parseSqliteDdlAsync(
   for (let index = 0; index < schema.tables.length; index++) {
     const table = schema.tables[index];
     if (!table) continue;
-    nodes.push(createTableNode(table, index, total, columnYOffset, diagnostics));
+    nodes.push(createTableNode(table, index, columnYOffset, diagnostics));
     onProgress?.(Math.round(((index + 1) / (total || 1)) * 100), `Parsed ${index + 1}/${total} tables`);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }

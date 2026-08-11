@@ -16,6 +16,7 @@ import {
   type DatabaseType,
   type Diagram,
   type DiagramCheckpoint,
+  type AiSettings,
 } from "@/lib/types";
 import { aiPatchSchema } from "@/lib/ai/diagramPatchSchema";
 import type { AiOperation } from "@/lib/ai/diagramPatchSchema";
@@ -71,7 +72,12 @@ export interface StoreState {
   removeAiChatPinnedTable: (tableId: string) => void;
   setAiChatPinnedTableIds: (ids: string[]) => void;
   setLastCursorPosition: (position: { x: number; y: number } | null) => void;
-  updateSettings: (settings: Partial<Settings>) => void;
+  updateSettings: (
+    settings: Omit<Partial<Settings>, "ai" | "checkpoints"> & {
+      ai?: Partial<AiSettings>;
+      checkpoints?: Partial<Settings["checkpoints"]>;
+    },
+  ) => void;
   createDiagram: (
     diagram: Omit<Diagram, "id" | "createdAt" | "updatedAt">,
   ) => Promise<void>;

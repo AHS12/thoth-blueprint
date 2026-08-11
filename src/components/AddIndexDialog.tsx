@@ -109,9 +109,12 @@ export default function AddIndexDialog({
 
     setColumns((current) => {
       const reordered = [...current];
+      const currentColumn = reordered[index];
+      const nextColumn = reordered[nextIndex];
+      if (!currentColumn || !nextColumn) return current;
       [reordered[index], reordered[nextIndex]] = [
-        reordered[nextIndex],
-        reordered[index],
+        nextColumn,
+        currentColumn,
       ];
       return reordered;
     });

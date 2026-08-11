@@ -155,6 +155,8 @@ export default function AiChatTab({
   const apiKeysRef: AiApiKeysRef = useRef<Record<AiProviderId, string | null>>({
     gemini: null,
     openrouter: null,
+    ollama: null,
+    lmstudio: null,
   });
   const chatScrollEndRef = useRef<HTMLDivElement>(null);
   const [providersDialogOpen, setProvidersDialogOpen] = useState(false);
@@ -318,8 +320,8 @@ export default function AiChatTab({
         if (!models.some((model) => model.id === currentModel) && models[0]) {
           updateSettings(
             provider === "ollama"
-              ? { ai: { ollamaModel: models[0].id } }
-              : { ai: { lmStudioModel: models[0].id } },
+               ? { ai: { ollamaModel: models[0].id } }
+               : { ai: { lmStudioModel: models[0].id } },
           );
         }
         setLocalConnectionStatuses((current) => ({
@@ -359,7 +361,10 @@ export default function AiChatTab({
     let cancelled = false;
     setOpenRouterModelsLoading(true);
     setOpenRouterModelsError(null);
-    void listOpenRouterModels({ apiKey: apiKeysRef.current.openrouter })
+     const modelOptions = apiKeysRef.current.openrouter
+       ? { apiKey: apiKeysRef.current.openrouter }
+       : {};
+     void listOpenRouterModels(modelOptions)
       .then((models) => {
         if (cancelled) return;
         setOpenRouterModels(models);
