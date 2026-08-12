@@ -21,6 +21,16 @@ import type { AiOperation, ColumnInput } from "./diagramPatchSchema";
 import { resolveCanonicalColumnType } from "./parseSqlColumnType";
 
 export type SimulateAiResult =
+  | { ok: true; data: Diagram["data"]; appliedOperations: number }
+  | {
+      ok: false;
+      error: string;
+      operationIndex: number;
+      operation: AiOperation;
+      appliedOperations: number;
+    };
+
+type ApplyOneResult =
   | { ok: true; data: Diagram["data"] }
   | { ok: false; error: string };
 
@@ -66,6 +76,40 @@ function resolveColumnRef(node: AppNode, ref: string): Column | undefined {
   return cols.find((c) => normalizeRef(c.name) === key);
 }
 
+function resolveIndexRef(node: AppNode, ref: string): Index | undefined {
+  const r = ref.trim();
+  if (!r) return undefined;
+  const indices = node.data.indices ?? [];
+  const byId = indices.find((index) => index.id === r);
+  if (byId) return byId;
+  const key = normalizeRef(r);
+  return indices.find((index) => normalizeRef(index.name) === key);
+}
+
+function columnNameTaken(
+  columns: Column[],
+  name: string,
+  exceptId?: string,
+): boolean {
+  const key = normalizeRef(name);
+  return columns.some(
+    (column) => column.id !== exceptId && normalizeRef(column.name) === key,
+  );
+}
+
+function edgeTouchesColumn(edge: AppEdge, tableId: string, columnId: string): boolean {
+  const sourceHandle = edge.sourceHandle ?? "";
+  const targetHandle = edge.targetHandle ?? "";
+  const sourceColumns = edge.data?.sourceColumns ?? [];
+  const targetColumns = edge.data?.targetColumns ?? [];
+  return (
+    (edge.source === tableId &&
+      (sourceHandle.startsWith(`${columnId}-`) || sourceColumns.includes(columnId))) ||
+    (edge.target === tableId &&
+      (targetHandle.startsWith(`${columnId}-`) || targetColumns.includes(columnId)))
+  );
+}
+
 function labelTaken(
   nodes: AppNode[] | undefined,
   label: string,
@@ -83,9 +127,9 @@ function filterIndicesForColumns(
   columns: Column[],
 ): Index[] | undefined {
   if (!indices?.length) return indices;
-  const names = new Set(columns.map((c) => c.name));
+  const ids = new Set(columns.map((c) => c.id));
   const next = indices.filter((idx) =>
-    idx.columns.every((cn) => names.has(cn)),
+    idx.columns.every((columnId) => ids.has(columnId)),
   );
   return next.length ? next : undefined;
 }
@@ -128,13 +172,28 @@ function columnFromInput(
   if (inp.isUnique !== undefined) col.isUnique = inp.isUnique;
   if (inp.isAutoIncrement !== undefined)
     col.isAutoIncrement = inp.isAutoIncrement;
-  if (inp.comment !== undefined) col.comment = inp.comment;
-  if (inp.enumValues !== undefined) col.enumValues = inp.enumValues;
-  if (inp.length !== undefined) col.length = inp.length;
+  if (inp.comment !== undefined) {
+    if (inp.comment === null) delete col.comment;
+    else col.comment = inp.comment;
+  }
+  if (inp.enumValues !== undefined) {
+    if (inp.enumValues === null) delete col.enumValues;
+    else col.enumValues = inp.enumValues;
+  }
+  if (inp.length !== undefined) {
+    if (inp.length === null) delete col.length;
+    else col.length = inp.length;
+  }
   else if (parsed.length !== undefined) col.length = parsed.length;
-  if (inp.precision !== undefined) col.precision = inp.precision;
+  if (inp.precision !== undefined) {
+    if (inp.precision === null) delete col.precision;
+    else col.precision = inp.precision;
+  }
   else if (parsed.precision !== undefined) col.precision = parsed.precision;
-  if (inp.scale !== undefined) col.scale = inp.scale;
+  if (inp.scale !== undefined) {
+    if (inp.scale === null) delete col.scale;
+    else col.scale = inp.scale;
+  }
   else if (parsed.scale !== undefined) col.scale = parsed.scale;
   if (inp.isUnsigned !== undefined) col.isUnsigned = inp.isUnsigned;
   else if (parsed.isUnsigned) col.isUnsigned = true;
@@ -154,7 +213,7 @@ function applyOneOp(
   draft: Diagram["data"],
   dbType: DatabaseType,
   op: AiOperation,
-): SimulateAiResult {
+): ApplyOneResult {
   if (op.op === "create_table") {
     const nodes = (draft.nodes ?? []) as AppNode[];
     if (labelTaken(nodes, op.label)) {
@@ -170,6 +229,9 @@ function applyOneOp(
       if (!r.ok) return r;
       if (seenIds.has(r.column.id)) {
         return { ok: false, error: `Duplicate column id ${r.column.id}.` };
+      }
+      if (columnNameTaken(cols, r.column.name)) {
+        return { ok: false, error: `Duplicate column name "${r.column.name}".` };
       }
       seenIds.add(r.column.id);
       cols.push(r.column);
@@ -249,6 +311,9 @@ function applyOneOp(
         if (seen.has(r.column.id)) {
           return { ok: false, error: `Duplicate column id ${r.column.id}.` };
         }
+        if (columnNameTaken(nextCols, r.column.name)) {
+          return { ok: false, error: `Duplicate column name "${r.column.name}".` };
+        }
         seen.add(r.column.id);
         nextCols.push(r.column);
       }
@@ -282,6 +347,129 @@ function applyOneOp(
       },
     };
     nodes[idx] = updated;
+    return { ok: true, data: { ...draft, nodes } };
+  }
+
+  if (op.op === "add_column") {
+    const nodes = [...((draft.nodes ?? []) as AppNode[])];
+    const resolved = resolveTableNode(draft, op.tableId);
+    if (!resolved) {
+      return { ok: false, error: `Unknown table "${op.tableId}".` };
+    }
+    const idx = nodes.findIndex((node) => node.id === resolved.id);
+    const node = idx >= 0 ? nodes[idx] : undefined;
+    if (!node) return { ok: false, error: `Unknown table "${op.tableId}".` };
+
+    const columns = node.data.columns ?? [];
+    if (op.column.id && columns.some((column) => column.id === op.column.id)) {
+      return { ok: false, error: `Column id "${op.column.id}" already exists.` };
+    }
+    if (columnNameTaken(columns, op.column.name)) {
+      return { ok: false, error: `Column name "${op.column.name}" already exists.` };
+    }
+    const result = columnFromInput(op.column, dbType, undefined, {
+      allowAdhocId: true,
+    });
+    if (!result.ok) return result;
+    nodes[idx] = {
+      ...node,
+      data: { ...node.data, columns: [...columns, result.column] },
+    };
+    return { ok: true, data: { ...draft, nodes } };
+  }
+
+  if (op.op === "update_column") {
+    const nodes = [...((draft.nodes ?? []) as AppNode[])];
+    const resolved = resolveTableNode(draft, op.tableId);
+    if (!resolved) {
+      return { ok: false, error: `Unknown table "${op.tableId}".` };
+    }
+    const idx = nodes.findIndex((node) => node.id === resolved.id);
+    const node = idx >= 0 ? nodes[idx] : undefined;
+    if (!node) return { ok: false, error: `Unknown table "${op.tableId}".` };
+    const columns = node.data.columns ?? [];
+    const column = resolveColumnRef(node, op.columnId);
+    if (!column) {
+      return {
+        ok: false,
+        error: `Unknown column "${op.columnId}" on table "${node.data.label}".`,
+      };
+    }
+    const changes = op.changes;
+    if (changes.name && columnNameTaken(columns, changes.name, column.id)) {
+      return { ok: false, error: `Column name "${changes.name}" already exists.` };
+    }
+    const result = columnFromInput(
+      {
+        ...column,
+        ...changes,
+        id: column.id,
+        name: changes.name ?? column.name,
+        type: changes.type ?? column.type,
+      },
+      dbType,
+      column,
+      { allowAdhocId: false },
+    );
+    if (!result.ok) return result;
+    nodes[idx] = {
+      ...node,
+      data: {
+        ...node.data,
+        columns: columns.map((current) =>
+          current.id === column.id ? result.column : current,
+        ),
+      },
+    };
+    return { ok: true, data: { ...draft, nodes } };
+  }
+
+  if (op.op === "delete_column") {
+    const nodes = [...((draft.nodes ?? []) as AppNode[])];
+    const resolved = resolveTableNode(draft, op.tableId);
+    if (!resolved) {
+      return { ok: false, error: `Unknown table "${op.tableId}".` };
+    }
+    const idx = nodes.findIndex((node) => node.id === resolved.id);
+    const node = idx >= 0 ? nodes[idx] : undefined;
+    if (!node) return { ok: false, error: `Unknown table "${op.tableId}".` };
+    const column = resolveColumnRef(node, op.columnId);
+    if (!column) {
+      return {
+        ok: false,
+        error: `Unknown column "${op.columnId}" on table "${node.data.label}".`,
+      };
+    }
+    const columns = node.data.columns ?? [];
+    if (columns.length <= 1) {
+      return { ok: false, error: "A table must have at least one column." };
+    }
+    if ((draft.edges ?? []).some((edge) => edgeTouchesColumn(edge, node.id, column.id))) {
+      return {
+        ok: false,
+        error: `Column "${column.name}" is used by a relationship. Delete that relationship first.`,
+      };
+    }
+    const nextColumns = columns.filter((current) => current.id !== column.id);
+    const nextIndices = (node.data.indices ?? [])
+      .map((index) => ({
+        ...index,
+        columns: index.columns.filter((columnId) => columnId !== column.id),
+      }))
+      .filter((index) => index.columns.length > 0);
+    const nextData = {
+      ...node.data,
+      columns: nextColumns,
+    };
+    if (nextIndices.length > 0) {
+      nextData.indices = nextIndices;
+    } else {
+      delete nextData.indices;
+    }
+    nodes[idx] = {
+      ...node,
+      data: nextData,
+    };
     return { ok: true, data: { ...draft, nodes } };
   }
 
@@ -380,6 +568,160 @@ function applyOneOp(
     };
   }
 
+  if (op.op === "update_relationship") {
+    const edges = draft.edges ?? [];
+    const edge = edges.find((current) => current.id === op.edgeId);
+    if (!edge) {
+      return { ok: false, error: `Unknown relationship "${op.edgeId}".` };
+    }
+    return {
+      ok: true,
+      data: {
+        ...draft,
+        edges: edges.map((current) =>
+          current.id === op.edgeId
+            ? { ...current, data: { ...current.data, relationship: op.relationshipType } }
+            : current,
+        ),
+      },
+    };
+  }
+
+  if (op.op === "create_index") {
+    const nodes = [...((draft.nodes ?? []) as AppNode[])];
+    const resolved = resolveTableNode(draft, op.tableId);
+    if (!resolved) {
+      return { ok: false, error: `Unknown table "${op.tableId}".` };
+    }
+    const idx = nodes.findIndex((node) => node.id === resolved.id);
+    const node = idx >= 0 ? nodes[idx] : undefined;
+    if (!node) return { ok: false, error: `Unknown table "${op.tableId}".` };
+    if ((node.data.indices ?? []).some((index) => normalizeRef(index.name) === normalizeRef(op.name))) {
+      return { ok: false, error: `Index name "${op.name}" already exists.` };
+    }
+    const columnIds: string[] = [];
+    for (const columnRef of op.columns) {
+      const column = resolveColumnRef(node, columnRef);
+      if (!column) {
+        return {
+          ok: false,
+          error: `Unknown index column "${columnRef}" on table "${node.data.label}".`,
+        };
+      }
+      if (columnIds.includes(column.id)) {
+        return { ok: false, error: `Index contains duplicate column "${column.name}".` };
+      }
+      columnIds.push(column.id);
+    }
+    const index: Index = {
+      id: `idx_${uuid()}`,
+      name: op.name.trim(),
+      columns: columnIds,
+      ...(op.isUnique !== undefined ? { isUnique: op.isUnique } : {}),
+      ...(op.type !== undefined ? { type: op.type } : {}),
+    };
+    const nextData = {
+      ...node.data,
+      indices: [...(node.data.indices ?? []), index],
+    };
+    nodes[idx] = {
+      ...node,
+      data: nextData,
+    };
+    return { ok: true, data: { ...draft, nodes } };
+  }
+
+  if (op.op === "update_index") {
+    const nodes = [...((draft.nodes ?? []) as AppNode[])];
+    const resolved = resolveTableNode(draft, op.tableId);
+    if (!resolved) {
+      return { ok: false, error: `Unknown table "${op.tableId}".` };
+    }
+    const nodeIndex = nodes.findIndex((node) => node.id === resolved.id);
+    const node = nodeIndex >= 0 ? nodes[nodeIndex] : undefined;
+    if (!node) return { ok: false, error: `Unknown table "${op.tableId}".` };
+    const current = resolveIndexRef(node, op.indexId);
+    if (!current) {
+      return {
+        ok: false,
+        error: `Unknown index "${op.indexId}" on table "${node.data.label}".`,
+      };
+    }
+    const nextName = op.name;
+    if (
+      nextName &&
+      (node.data.indices ?? []).some(
+        (index) =>
+          index.id !== current.id && normalizeRef(index.name) === normalizeRef(nextName),
+      )
+    ) {
+      return { ok: false, error: `Index name "${op.name}" already exists.` };
+    }
+    let columnIds = current.columns;
+    if (op.columns) {
+      columnIds = [];
+      for (const columnRef of op.columns) {
+        const column = resolveColumnRef(node, columnRef);
+        if (!column) {
+          return {
+            ok: false,
+            error: `Unknown index column "${columnRef}" on table "${node.data.label}".`,
+          };
+        }
+        if (columnIds.includes(column.id)) {
+          return { ok: false, error: `Index contains duplicate column "${column.name}".` };
+        }
+        columnIds.push(column.id);
+      }
+    }
+    const updatedIndex: Index = {
+      ...current,
+      ...(op.name !== undefined ? { name: op.name.trim() } : {}),
+      columns: columnIds,
+      ...(op.isUnique !== undefined ? { isUnique: op.isUnique } : {}),
+      ...(op.type !== undefined ? { type: op.type } : {}),
+    };
+    nodes[nodeIndex] = {
+      ...node,
+      data: {
+        ...node.data,
+        indices: (node.data.indices ?? []).map((index) =>
+          index.id === current.id ? updatedIndex : index,
+        ),
+      },
+    };
+    return { ok: true, data: { ...draft, nodes } };
+  }
+
+  if (op.op === "delete_index") {
+    const nodes = [...((draft.nodes ?? []) as AppNode[])];
+    const resolved = resolveTableNode(draft, op.tableId);
+    if (!resolved) {
+      return { ok: false, error: `Unknown table "${op.tableId}".` };
+    }
+    const idx = nodes.findIndex((node) => node.id === resolved.id);
+    const node = idx >= 0 ? nodes[idx] : undefined;
+    if (!node) return { ok: false, error: `Unknown table "${op.tableId}".` };
+    const index = resolveIndexRef(node, op.indexId);
+    if (!index) {
+      return {
+        ok: false,
+        error: `Unknown index "${op.indexId}" on table "${node.data.label}".`,
+      };
+    }
+    const nextIndices = (node.data.indices ?? []).filter(
+      (current) => current.id !== index.id,
+    );
+    nodes[idx] = {
+      ...node,
+      data: {
+        ...node.data,
+        ...(nextIndices.length ? { indices: nextIndices } : {}),
+      },
+    };
+    return { ok: true, data: { ...draft, nodes } };
+  }
+
   return { ok: false, error: "Unsupported operation." };
 }
 
@@ -390,11 +732,19 @@ export function simulateAiPatch(
 ): SimulateAiResult {
   let draft = cloneData(data);
 
-  for (const op of operations) {
+  for (const [operationIndex, op] of operations.entries()) {
     const res = applyOneOp(draft, dbType, op);
-    if (!res.ok) return res;
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: res.error,
+        operationIndex,
+        operation: op,
+        appliedOperations: operationIndex,
+      };
+    }
     draft = res.data;
   }
 
-  return { ok: true, data: draft };
+  return { ok: true, data: draft, appliedOperations: operations.length };
 }

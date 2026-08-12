@@ -140,6 +140,67 @@ function getMessageText(body: unknown): string | null {
   return text || null;
 }
 
+async function readOpenRouterStream(
+  response: Response,
+  onText: (text: string) => void,
+): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("OpenRouter returned an unreadable stream.");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  let finished = false;
+
+  const consumeLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(":")) return;
+    if (!trimmed.startsWith("data:")) return;
+    const data = trimmed.slice(5).trim();
+    if (data === "[DONE]") {
+      finished = true;
+      return;
+    }
+    let chunk: unknown;
+    try {
+      chunk = JSON.parse(data) as unknown;
+    } catch {
+      return;
+    }
+    const error = getErrorMessage(chunk);
+    if (error) throw new Error(error);
+    if (!chunk || typeof chunk !== "object") return;
+    const choices = (chunk as { choices?: unknown }).choices;
+    if (!Array.isArray(choices) || !choices[0] || typeof choices[0] !== "object") return;
+    const delta = (choices[0] as { delta?: unknown }).delta;
+    if (!delta || typeof delta !== "object") return;
+    const content = (delta as { content?: unknown }).content;
+    if (typeof content !== "string" || !content) return;
+    text += content;
+    onText(content);
+  };
+
+  try {
+    while (!finished) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let lineEnd = buffer.indexOf("\n");
+      while (lineEnd >= 0) {
+        const line = buffer.slice(0, lineEnd);
+        buffer = buffer.slice(lineEnd + 1);
+        consumeLine(line);
+        if (finished) break;
+        lineEnd = buffer.indexOf("\n");
+      }
+    }
+    buffer += decoder.decode();
+    if (!finished && buffer.trim()) consumeLine(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+  return text.trim();
+}
+
 export async function callOpenRouterDiagramAssistant(params: {
   apiKey: string;
   model: string;
@@ -147,6 +208,7 @@ export async function callOpenRouterDiagramAssistant(params: {
   systemInstruction: string;
   history: { role: "user" | "model"; text: string }[];
   userMessage: string;
+  onText?: (text: string) => void;
 }): Promise<string> {
   const messages = [
     { role: "system", content: params.systemInstruction },
@@ -160,6 +222,7 @@ export async function callOpenRouterDiagramAssistant(params: {
     model: params.model,
     messages,
     temperature: 0.2,
+    ...(params.onText ? { stream: true } : {}),
   };
   if (params.supportsResponseFormat) {
     body.response_format = { type: "json_object" };
@@ -177,13 +240,19 @@ export async function callOpenRouterDiagramAssistant(params: {
     headers,
     body: JSON.stringify(body),
   });
-  const responseBody = (await response.json()) as unknown;
   if (!response.ok) {
+    const responseBody = (await response.json()) as unknown;
     throw new Error(
       getErrorMessage(responseBody) ??
         `OpenRouter request failed (${response.status}).`,
     );
   }
+  if (params.onText) {
+    const text = await readOpenRouterStream(response, params.onText);
+    if (!text) throw new Error("Empty response from OpenRouter.");
+    return text;
+  }
+  const responseBody = (await response.json()) as unknown;
   const text = getMessageText(responseBody);
   if (!text) throw new Error("Empty response from OpenRouter.");
   return text;

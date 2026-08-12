@@ -13,6 +13,8 @@ interface OllamaTagsResponse {
   }>;
 }
 
+type OllamaModel = NonNullable<OllamaTagsResponse["models"]>[number];
+
 interface OpenAiModelsResponse {
   data?: Array<{ id?: unknown; owned_by?: unknown }>;
 }
@@ -91,7 +93,7 @@ export async function listLocalAiModels(
     if (provider === "ollama") {
       const models = (body as OllamaTagsResponse).models ?? [];
       return models
-        .filter((model): model is { name: string; details?: OllamaTagsResponse["models"][number]["details"] } => typeof model.name === "string")
+         .filter((model): model is OllamaModel & { name: string } => typeof model.name === "string")
         .map((model) => {
           const details = model.details;
           const suffix = [details?.family, details?.parameter_size, details?.quantization_level]
@@ -148,11 +150,93 @@ function getOpenAiResponseText(body: unknown): string | null {
   return typeof content === "string" && content.trim() ? content.trim() : null;
 }
 
+async function readStreamLines(
+  response: Response,
+  onLine: (line: string) => void,
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Local AI provider returned an unreadable stream.");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let lineEnd = buffer.indexOf("\n");
+      while (lineEnd >= 0) {
+        onLine(buffer.slice(0, lineEnd));
+        buffer = buffer.slice(lineEnd + 1);
+        lineEnd = buffer.indexOf("\n");
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) onLine(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function readOllamaStream(
+  response: Response,
+  onText: (text: string) => void,
+): Promise<string> {
+  let text = "";
+  await readStreamLines(response, (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const chunk = JSON.parse(trimmed) as {
+      error?: unknown;
+      message?: { content?: unknown };
+    };
+    if (typeof chunk.error === "string") throw new Error(chunk.error);
+    const content = chunk.message?.content;
+    if (typeof content !== "string" || !content) return;
+    text += content;
+    onText(content);
+  });
+  return text.trim();
+}
+
+async function readOpenAiCompatibleStream(
+  response: Response,
+  onText: (text: string) => void,
+): Promise<string> {
+  let text = "";
+  await readStreamLines(response, (line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(":")) return;
+    if (!trimmed.startsWith("data:")) return;
+    const data = trimmed.slice(5).trim();
+    if (data === "[DONE]") return;
+    const chunk = JSON.parse(data) as {
+      error?: unknown;
+      choices?: Array<{ delta?: { content?: unknown } }>;
+    };
+    if (chunk.error) {
+      const message =
+        typeof chunk.error === "string"
+          ? chunk.error
+          : typeof chunk.error === "object" && chunk.error !== null &&
+              typeof (chunk.error as { message?: unknown }).message === "string"
+            ? (chunk.error as { message: string }).message
+            : "Local AI stream failed.";
+      throw new Error(message);
+    }
+    const content = chunk.choices?.[0]?.delta?.content;
+    if (typeof content !== "string" || !content) return;
+    text += content;
+    onText(content);
+  });
+  return text.trim();
+}
+
 async function callOllama(
   baseUrl: string,
   model: string,
   messages: ReturnType<typeof buildMessages>,
   useSchema = true,
+  onText?: (text: string) => void,
 ): Promise<string> {
   const root = normalizeBaseUrl("ollama", baseUrl);
   const response = await fetch(`${root}/api/chat`, {
@@ -161,18 +245,24 @@ async function callOllama(
     body: JSON.stringify({
       model,
       messages,
-      stream: false,
+       stream: Boolean(onText),
       format: useSchema ? AI_PATCH_JSON_SCHEMA : "json",
       options: { temperature: 0.2 },
     }),
   });
-  const body = await readJson(response);
   if (!response.ok) {
+    const body = await readJson(response);
     throw new LocalAiHttpError(
       getErrorText(body) ?? `Ollama returned HTTP ${response.status}.`,
       response.status,
     );
   }
+  if (onText) {
+    const content = await readOllamaStream(response, onText);
+    if (!content) throw new Error("Ollama returned an empty response.");
+    return content;
+  }
+  const body = await readJson(response);
   const content =
     body && typeof body === "object" &&
     (body as { message?: { content?: unknown } }).message &&
@@ -188,6 +278,7 @@ async function callLmStudio(
   model: string,
   messages: ReturnType<typeof buildMessages>,
   useSchema = true,
+  onText?: (text: string) => void,
 ): Promise<string> {
   const root = normalizeBaseUrl("lmstudio", baseUrl);
   const response = await fetch(`${root}/v1/chat/completions`, {
@@ -197,7 +288,7 @@ async function callLmStudio(
       model,
       messages,
       temperature: 0.2,
-      stream: false,
+       stream: Boolean(onText),
       ...(useSchema
         ? {
             response_format: {
@@ -212,13 +303,19 @@ async function callLmStudio(
         : {}),
     }),
   });
-  const body = await readJson(response);
   if (!response.ok) {
+    const body = await readJson(response);
     throw new LocalAiHttpError(
       getErrorText(body) ?? `LM Studio returned HTTP ${response.status}.`,
       response.status,
     );
   }
+  if (onText) {
+    const content = await readOpenAiCompatibleStream(response, onText);
+    if (!content) throw new Error("LM Studio returned an empty response.");
+    return content;
+  }
+  const body = await readJson(response);
   const content = getOpenAiResponseText(body);
   if (!content) throw new Error("LM Studio returned an empty response.");
   return content;
@@ -239,6 +336,7 @@ export async function callLocalDiagramAssistant(params: {
   systemInstruction: string;
   history: AiChatHistoryMessage[];
   userMessage: string;
+  onText?: (text: string) => void;
 }): Promise<string> {
   if (!params.model) throw new Error("Choose a local model before sending a message.");
   const messages = buildMessages(
@@ -249,17 +347,17 @@ export async function callLocalDiagramAssistant(params: {
   try {
     if (params.provider === "ollama") {
       try {
-        return await callOllama(params.baseUrl, params.model, messages);
+         return await callOllama(params.baseUrl, params.model, messages, true, params.onText);
       } catch (error) {
         if (!shouldRetryWithoutSchema(error)) throw error;
-        return callOllama(params.baseUrl, params.model, messages, false);
+         return callOllama(params.baseUrl, params.model, messages, false, params.onText);
       }
     }
     try {
-      return await callLmStudio(params.baseUrl, params.model, messages);
+       return await callLmStudio(params.baseUrl, params.model, messages, true, params.onText);
     } catch (error) {
       if (!shouldRetryWithoutSchema(error)) throw error;
-      return callLmStudio(params.baseUrl, params.model, messages, false);
+       return callLmStudio(params.baseUrl, params.model, messages, false, params.onText);
     }
   } catch (error) {
     throw localConnectionError(

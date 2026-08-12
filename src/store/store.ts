@@ -16,8 +16,10 @@ import {
   type DatabaseType,
   type Diagram,
   type DiagramCheckpoint,
+  type AiSettings,
 } from "@/lib/types";
 import { aiPatchSchema } from "@/lib/ai/diagramPatchSchema";
+import type { AiOperation } from "@/lib/ai/diagramPatchSchema";
 import { simulateAiPatch } from "@/lib/ai/simulateAiPatch";
 import { findExistingRelationship } from "@/lib/utils";
 import {
@@ -37,6 +39,9 @@ export interface StoreState {
   selectedDiagramId: number | null;
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
+  /** Incremented for one-shot table focus requests from navigation actions. */
+  tableFocusRequestToken: number;
+  tableFocusRequestNodeId: string | null;
   /** Bumped to switch the editor sidebar tab (does not open or expand the sidebar). */
   editorSidebarNavigateToken: number;
   /** Sidebar tab to show when `editorSidebarNavigateToken` changes; cleared after consumption. */
@@ -59,6 +64,7 @@ export interface StoreState {
   setSelectedDiagramId: (id: number | null) => void;
   setSelectedNodeId: (id: string | null) => void;
   setSelectedEdgeId: (id: string | null) => void;
+  requestTableFocus: (nodeId: string) => void;
   focusAiChatForTableNode: (tableId: string) => void;
   setAiChatPanelOpen: (open: boolean) => void;
   clearEditorSidebarNavigateTarget: () => void;
@@ -66,7 +72,12 @@ export interface StoreState {
   removeAiChatPinnedTable: (tableId: string) => void;
   setAiChatPinnedTableIds: (ids: string[]) => void;
   setLastCursorPosition: (position: { x: number; y: number } | null) => void;
-  updateSettings: (settings: Partial<Settings>) => void;
+  updateSettings: (
+    settings: Omit<Partial<Settings>, "ai" | "checkpoints"> & {
+      ai?: Partial<AiSettings>;
+      checkpoints?: Partial<Settings["checkpoints"]>;
+    },
+  ) => void;
   createDiagram: (
     diagram: Omit<Diagram, "id" | "createdAt" | "updatedAt">,
   ) => Promise<void>;
@@ -93,7 +104,14 @@ export interface StoreState {
     raw: unknown,
   ) =>
     | { ok: true; summary?: string }
-    | { ok: false; error: string };
+    | {
+        ok: false;
+        error: string;
+        stage: "precondition" | "schema" | "simulation";
+        operationIndex?: number;
+        operation?: AiOperation;
+        appliedOperations?: number;
+      };
   undoDelete: () => void;
   batchUpdateNodes: (nodes: (AppNode | AppNoteNode | AppZoneNode)[]) => void;
   copyNodes: (nodes: (AppNode | AppNoteNode | AppZoneNode)[]) => void;
@@ -707,6 +725,8 @@ export const useStore = create<StoreState>()(
     selectedDiagramId: null,
     selectedNodeId: null,
     selectedEdgeId: null,
+    tableFocusRequestToken: 0,
+    tableFocusRequestNodeId: null,
     editorSidebarNavigateToken: 0,
     editorSidebarNavigateTargetTab: null,
     aiChatPinnedTableIds: [],
@@ -777,6 +797,13 @@ export const useStore = create<StoreState>()(
       }),
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
     setSelectedEdgeId: (id) => set({ selectedEdgeId: id }),
+    requestTableFocus: (nodeId) =>
+      set((state) => ({
+        selectedNodeId: nodeId,
+        selectedEdgeId: null,
+        tableFocusRequestNodeId: nodeId,
+        tableFocusRequestToken: state.tableFocusRequestToken + 1,
+      })),
     focusAiChatForTableNode: (tableId) =>
       set((s) => {
         const ids = s.aiChatPinnedTableIds.includes(tableId)
@@ -1326,16 +1353,25 @@ export const useStore = create<StoreState>()(
         state.selectedDiagramId,
       );
       if (!diagram?.id) {
-        return { ok: false, error: "No diagram selected." };
+        return { ok: false, error: "No diagram selected.", stage: "precondition" };
       }
       if (diagram.data.isLocked) {
-        return { ok: false, error: "Diagram is locked." };
+        return { ok: false, error: "Diagram is locked.", stage: "precondition" };
       }
 
       const parsed = aiPatchSchema.safeParse(raw);
       if (!parsed.success) {
-        const msg = parsed.error.issues.map((i) => i.message).join("; ");
-        return { ok: false, error: msg || "Invalid AI response format." };
+        const msg = parsed.error.issues
+          .map((issue) => {
+            const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
+            return `${path}${issue.message}`;
+          })
+          .join("; ");
+        return {
+          ok: false,
+          error: msg || "Invalid AI response format.",
+          stage: "schema",
+        };
       }
 
       try {
@@ -1348,7 +1384,14 @@ export const useStore = create<StoreState>()(
 
         const sim = simulateAiPatch(diagram.data, diagram.dbType, operations);
         if (!sim.ok) {
-          return { ok: false, error: sim.error };
+          return {
+            ok: false,
+            error: sim.error,
+            stage: "simulation",
+            operationIndex: sim.operationIndex,
+            operation: sim.operation,
+            appliedOperations: sim.appliedOperations,
+          };
         }
 
         set((s) =>
@@ -1369,7 +1412,7 @@ export const useStore = create<StoreState>()(
       } catch (e) {
         console.error("applyAiDiagramOperations:", e);
         const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, error: msg };
+        return { ok: false, error: msg, stage: "simulation" };
       }
     },
     undoDelete: () => {

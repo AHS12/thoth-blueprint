@@ -2,6 +2,7 @@ import { exporter } from "@dbml/core";
 import { type AppNode, type Column, type Diagram, type Index } from "../types";
 import { DbRelationship } from "../constants";
 import { useStore } from "@/store/store";
+import { exportToSqlite } from "./sqlite-sql-exporter";
 
 interface ExportOptions {
   exportForeignKeyConstraint?: boolean;
@@ -207,6 +208,9 @@ export const exportToDbml = (diagram: Diagram, options: ExportOptions = {}): str
 };
 
 export const exportToSql = (diagram: Diagram, options: ExportOptions = {}): string => {
+  if (diagram.dbType === "sqlite") {
+    return exportToSqlite(diagram, options);
+  }
   const dbmlString = diagramToDbml(diagram, options);
   return exporter.export(dbmlString, diagram.dbType);
 };

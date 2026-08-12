@@ -13,6 +13,7 @@ import {
 import { generateDjangoMigration } from "@/lib/codegen/django/migration-generator";
 import { generateLaravelMigration } from "@/lib/codegen/laravel/migration-generator";
 import { generateTypeOrmMigration } from "@/lib/codegen/typeorm/migration-generator";
+import { dbTypeDisplay as databaseTypeDisplay } from "@/lib/db-types";
 import { exportToDbml, exportToJson, exportToSql } from "@/lib/exporter/sql-dbml-json-exporter";
 import { exportToMermaid } from "@/lib/mermaid";
 import { type Diagram, type ProcessedEdge, type ProcessedNode } from "@/lib/types";
@@ -220,7 +221,7 @@ export function ExportDialog({
     }
   };
 
-  const dbTypeDisplay = diagram?.dbType === "mysql" ? "MySQL" : "PostgreSQL";
+  const dbTypeDisplay = diagram ? databaseTypeDisplay[diagram.dbType] : "SQL";
 
   const shareOptions = [
     {

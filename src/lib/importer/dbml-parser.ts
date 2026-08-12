@@ -326,5 +326,41 @@ function preprocessDbml(content: string): string {
             currentTableLineIndex = -1;
         }
     }
+    return removeEmptyIndexesBlocks(processedLines.join('\n'));
+}
+
+function removeEmptyIndexesBlocks(content: string): string {
+    const lines = content.split('\n');
+    const processedLines: string[] = [];
+
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index] || "";
+
+        // @dbml/core requires at least one index definition inside this block.
+        if (/^\s*Indexes\s*\{\s*\}\s*$/.test(line)) {
+            processedLines.push("");
+            continue;
+        }
+
+        if (/^\s*Indexes\s*\{\s*$/.test(line)) {
+            let closingIndex = index + 1;
+            while (closingIndex < lines.length && /^\s*$/.test(lines[closingIndex] || "")) {
+                closingIndex += 1;
+            }
+
+            if (closingIndex < lines.length && /^\s*\}\s*$/.test(lines[closingIndex] || "")) {
+                // Keep the original number of lines for useful parser locations.
+                while (index <= closingIndex) {
+                    processedLines.push("");
+                    index += 1;
+                }
+                index -= 1;
+                continue;
+            }
+        }
+
+        processedLines.push(line);
+    }
+
     return processedLines.join('\n');
 }

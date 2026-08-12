@@ -2,7 +2,7 @@
   "name": "thothblueprint",
   "description": "Free visual database design tool with drag-and-move editing, multi-format export, and migration generation for popular frameworks.",
   "private": true,
-  "version": "0.0.12",
+  "version": "0.0.13",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,7 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 5",
     "lint:fix": "eslint . --ext ts,tsx --fix",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit -p tsconfig.app.json",
     "type-check:strict": "tsc --noEmit --strict",
     "prebuild": "pnpm run type-check && pnpm run lint",
     "check-unused": "pnpm dlx unimported",
@@ -89,6 +89,7 @@
     "recharts": "^2.12.7",
     "remark-gfm": "^4.0.0",
     "sonner": "^1.5.0",
+    "sql.js": "^1.14.1",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "use-debounce": "^10.0.6",
@@ -96,6 +97,7 @@
     "vite-plugin-pwa": "^1.0.3",
     "workbox-window": "^7.3.0",
     "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.24.6",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
@@ -105,6 +107,7 @@
     "@types/node": "^22.5.5",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react-swc": "^3.9.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.9.0",

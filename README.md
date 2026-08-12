@@ -155,6 +155,12 @@ local server URL in the assistant settings and select any model exposed by the
 server. Ollama may require `OLLAMA_ORIGINS`, while LM Studio requires CORS to be
 enabled in its Developer server settings.
 
+The assistant can create, rename, update, and delete tables and columns; create,
+update, and delete indexes; edit table and column comments; and create, update,
+or delete relationships. Operations are streamed for progress, validated with
+Zod, simulated against a clone, and committed atomically. If a patch is rejected,
+the assistant receives the validation error and can repair it automatically.
+
 ## Contributing
 
 Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to contribute to this project.

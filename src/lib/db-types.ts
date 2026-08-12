@@ -44,13 +44,25 @@ export const mysqlDataTypes = [
   "GEOMETRY", "POINT", "LINESTRING", "POLYGON", "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON", "GEOMETRYCOLLECTION",
 ];
 
+export const sqliteDataTypes = [
+  // SQLite accepts arbitrary declared type names, but these are the common
+  // names users encounter in SQLite schemas and the editor can suggest.
+  "INTEGER", "INT", "BIGINT", "SMALLINT", "TINYINT",
+  "REAL", "DOUBLE", "DOUBLE PRECISION", "FLOAT",
+  "NUMERIC", "DECIMAL", "BOOLEAN",
+  "TEXT", "CHAR", "VARCHAR", "CLOB", "BLOB",
+  "DATE", "DATETIME", "JSON",
+];
+
 export const dataTypes: Record<DatabaseType, string[]> = {
   postgres: postgresDataTypes,
   mysql: mysqlDataTypes,
+  sqlite: sqliteDataTypes,
 };
 
 // Display names for supported database types
 export const dbTypeDisplay: Record<DatabaseType, string> = {
   postgres: "PostgreSQL",
   mysql: "MySQL",
+  sqlite: "SQLite",
 };

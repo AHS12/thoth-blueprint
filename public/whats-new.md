@@ -1,3 +1,50 @@
+# What's New in ThothBlueprint v0.0.13
+
+This release adds SQLite schema support, full index management, more reliable AI schema operations, improved developer tooling, and a fix for DBML imports containing empty index blocks.
+
+## Highlights
+
+- **SQLite Support:** Import SQLite DDL schemas and export SQLite-compatible SQL directly from the application.
+- **Index Management:** Create, edit, search, and delete table indexes from dedicated index management components.
+- **More Reliable AI Assistance:** Use schema-aware patch operations with validation, retries, streaming improvements, and clearer error reporting.
+- **DBML Import Fix:** Import DBML files that contain empty `Indexes {}` blocks.
+- **Developer Guidance:** Added comprehensive agent guides for the major application subsystems.
+
+## New & Improved
+
+- **SQLite Database Support**:
+  - Added SQLite as a supported database type throughout the application.
+  - Implemented SQLite DDL parsing with a dedicated worker for schema extraction.
+  - Added SQLite SQL export for table and index creation.
+  - Enhanced SQLite data type and operation handling across the application.
+  - Updated Laravel, TypeORM, and Django migration helpers and generators to support SQLite and additional data types.
+  - Updated Vite configuration to include WebAssembly files required by SQLite support.
+
+- **Index Management**:
+  - Added the **Add Index** dialog for creating and editing indexes.
+  - Added the **Indexes** sidebar tab for browsing, searching, focusing, editing, and deleting indexes.
+  - Added support for index types, unique indexes, composite indexes, and meaningful column ordering.
+  - Improved table and editor integration for index operations.
+
+- **AI Patch Operations**:
+  - Replaced the static AI patch JSON schema with a Zod-based schema.
+  - Added operations for adding, updating, and deleting columns and indexes.
+  - Enhanced patch simulation with validation and detailed error reporting.
+  - Added retry handling for transient AI request failures.
+  - Improved streamed response handling for cloud and local AI providers.
+  - Added more context to AI operation failures in the application store.
+
+- **Quality and Maintainability**:
+  - Enhanced the type-check command and improved error handling across several components.
+  - Refactored code for better maintainability and clarity.
+  - Added agent guides for the AI assistant, diagram editor, import/export, migration code generation, persistence, and PWA release workflows.
+
+## Bug Fixes
+
+- **DBML Empty Index Blocks**: Fixed imports failing when DBML contains empty `Indexes {}` blocks, while preserving parser line structure and valid index definitions.
+
+---
+
 # What's New in ThothBlueprint v0.0.12
 
 This release expands the AI assistant with cloud and local provider support and introduces a Node-free distribution package for running ThothBlueprint locally.

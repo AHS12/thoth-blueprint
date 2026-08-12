@@ -1,6 +1,12 @@
 import { colors } from "@/lib/constants";
 import { dataTypes } from "@/lib/db-types";
-import { type AppNode, type Column, type DatabaseType, type Index } from "@/lib/types";
+import {
+  type AppNode,
+  type Column,
+  type DatabaseType,
+  type Index,
+  type IndexType,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStore, type StoreState } from "@/store/store";
 import {
@@ -31,7 +37,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ColorPicker } from "./ColorPicker";
 import { CompositePKDialog } from "./CompositePKDialog";
@@ -61,11 +67,20 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Separator } from "./ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 import { Textarea } from "./ui/textarea";
 
 interface TableAccordionContentProps {
   node: AppNode;
   onStartEdit: () => void;
+  focusIndexId?: string;
+  onFocusIndexHandled?: () => void;
 }
 
 function SortableColumnItem({
@@ -381,6 +396,8 @@ function SortableColumnItem({
 export default function TableAccordionContent({
   node,
   onStartEdit,
+  focusIndexId,
+  onFocusIndexHandled,
 }: TableAccordionContentProps) {
   const { diagramsMap, updateNode, deleteNodes, selectedDiagramId } = useStore(
     useShallow((state: StoreState) => ({
@@ -398,6 +415,7 @@ export default function TableAccordionContent({
   const [tableComment, setTableComment] = useState("");
   const [openAccordionItems, setOpenAccordionItems] = useState<string[]>([]);
   const [isPKDialogOpen, setIsPKDialogOpen] = useState(false);
+  const indexItemRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   // Create a Map for O(1) column lookups
   const columnsMap = useMemo(() => {
@@ -410,6 +428,13 @@ export default function TableAccordionContent({
   const isLocked = diagram?.data.isLocked ?? false;
   const availableTypes = dataTypes[dbType] ?? [];
   const sensors = useSensors(useSensor(PointerSensor));
+
+  const indexTypeLabels: Record<IndexType, string> = {
+    INDEX: "Default",
+    UNIQUE: "Unique",
+    FULLTEXT: "Fulltext",
+    SPATIAL: "Spatial",
+  };
 
   useEffect(() => {
     if (node) {
@@ -426,6 +451,26 @@ export default function TableAccordionContent({
       setTableComment(node.data.comment ?? "");
     }
   }, [node]);
+
+  useEffect(() => {
+    if (!focusIndexId || !indices.some((index) => index.id === focusIndexId)) {
+      return;
+    }
+
+    setOpenAccordionItems((current) =>
+      current.includes("indices") ? current : [...current, "indices"],
+    );
+
+    const focusTimeout = window.setTimeout(() => {
+      indexItemRefs.current.get(focusIndexId)?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+      onFocusIndexHandled?.();
+    }, 50);
+
+    return () => window.clearTimeout(focusTimeout);
+  }, [focusIndexId, indices, onFocusIndexHandled]);
 
   if (!node || !diagram) return null;
 
@@ -633,6 +678,8 @@ export default function TableAccordionContent({
             {indices.map((idx) => (
               <div
                 key={idx.id}
+                ref={(element) => indexItemRefs.current.set(idx.id, element)}
+                data-index-id={idx.id}
                 className="flex items-center gap-2 p-2 border rounded-md bg-background"
               >
                 <Popover>
@@ -724,13 +771,44 @@ export default function TableAccordionContent({
                         disabled={isLocked}
                       />
                     </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`index-type-${idx.id}`}>Type</Label>
+                      <Select
+                        value={idx.type ?? (idx.isUnique ? "UNIQUE" : "INDEX")}
+                        onValueChange={(value) => {
+                          const nextType = value as IndexType;
+                          handleIndexUpdate(idx.id, {
+                            type: nextType,
+                            isUnique: nextType === "UNIQUE",
+                          });
+                        }}
+                        disabled={isLocked}
+                      >
+                        <SelectTrigger id={`index-type-${idx.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(Object.keys(indexTypeLabels) as IndexType[]).map(
+                            (indexType) => (
+                              <SelectItem key={indexType} value={indexType}>
+                                {indexTypeLabels[indexType]}
+                              </SelectItem>
+                            ),
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="flex items-center space-x-2">
                       <Checkbox
                         id={`index-unique-${idx.id}`}
                         checked={!!idx.isUnique}
-                        onCheckedChange={(checked) =>
-                          handleIndexUpdate(idx.id, { isUnique: !!checked })
-                        }
+                        onCheckedChange={(checked) => {
+                          const isUnique = !!checked;
+                          handleIndexUpdate(idx.id, {
+                            isUnique,
+                            type: isUnique ? "UNIQUE" : "INDEX",
+                          });
+                        }}
                         disabled={isLocked}
                       />
                       <Label htmlFor={`index-unique-${idx.id}`}>Unique</Label>

@@ -1,4 +1,4 @@
-import { type Column } from "@/lib/types";
+import { type Column, type DatabaseType } from "@/lib/types";
 
 export function toDjangoTableName(tableName: string): string {
   return tableName.toLowerCase().replace(/[^a-z0-9_]/g, "_");
@@ -87,9 +87,32 @@ const POSTGRES_TO_DJANGO: Record<string, string> = {
   SMALLSERIAL: "models.SmallAutoField",
 };
 
+const SQLITE_TO_DJANGO: Record<string, string> = {
+  INTEGER: "models.IntegerField",
+  INT: "models.IntegerField",
+  BIGINT: "models.BigIntegerField",
+  SMALLINT: "models.SmallIntegerField",
+  TINYINT: "models.SmallIntegerField",
+  REAL: "models.FloatField",
+  DOUBLE: "models.FloatField",
+  "DOUBLE PRECISION": "models.FloatField",
+  FLOAT: "models.FloatField",
+  NUMERIC: "models.DecimalField",
+  DECIMAL: "models.DecimalField",
+  BOOLEAN: "models.BooleanField",
+  TEXT: "models.TextField",
+  CHAR: "models.CharField",
+  VARCHAR: "models.CharField",
+  CLOB: "models.TextField",
+  BLOB: "models.BinaryField",
+  DATE: "models.DateField",
+  DATETIME: "models.DateTimeField",
+  JSON: "models.JSONField",
+};
+
 export function getDjangoFieldType(
   col: Column,
-  dbType: "mysql" | "postgres"
+  dbType: DatabaseType
 ): string {
   const type = col.type.toUpperCase();
 
@@ -101,7 +124,12 @@ export function getDjangoFieldType(
     return "models.AutoField";
   }
 
-  const mapping = dbType === "postgres" ? POSTGRES_TO_DJANGO : MYSQL_TO_DJANGO;
+  const mapping =
+    dbType === "postgres"
+      ? POSTGRES_TO_DJANGO
+      : dbType === "sqlite"
+        ? SQLITE_TO_DJANGO
+        : MYSQL_TO_DJANGO;
   const baseType = type?.split("(")[0]?.trim() || "";
   return mapping[baseType] || "models.TextField";
 }

@@ -2,6 +2,7 @@ import { MSSQLIcon } from "@/components/icons/MSSQLIcon";
 import { MySQLIcon } from "@/components/icons/MySQLIcon";
 import { PostgreSQLIcon } from "@/components/icons/PostgreSQLIcon";
 import { SQLiteIcon } from "@/components/icons/SQLiteIcon";
+import { DatabaseTypeIcon } from "@/components/icons/DatabaseTypeIcon";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { importFromJson } from "@/lib/importer";
 import { parseDbmlAsync } from "@/lib/importer/dbml-parser";
 import { parseMySqlDdlAsync } from "@/lib/importer/mysql-ddl-parser";
+import { dbTypeDisplay } from "@/lib/db-types";
 import { type DatabaseType, type Diagram } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store/store";
@@ -42,7 +44,7 @@ import * as z from "zod";
 
 const formSchema = z.object({
   name: z.string().trim().min(1, "Diagram name is required"),
-  dbType: z.enum(["mysql", "postgres"]),
+  dbType: z.enum(["mysql", "postgres", "sqlite"]),
   importType: z.enum(["json", "sql", "dbml"]),
   content: z.string().min(1, "Content to import is required"),
   reorganizeAfterImport: z.boolean().optional(),
@@ -76,6 +78,7 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
 
   const content = form.watch("content");
   const nameValue = form.watch("name");
+  const selectedDbType = form.watch("dbType");
 
   const handleFileRead = useCallback((file: File) => {
     const acceptedExtension = activeTab === 'json' ? '.json' : activeTab === 'dbml' ? '.dbml' : '.sql';
@@ -116,18 +119,18 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
     form.clearErrors("content");
   };
 
-  const dbOptions: { key: "mysql" | "postgres"; label: string; component: React.ReactNode }[] = [
+  const dbOptions: { key: "mysql" | "postgres" | "sqlite"; label: string; component: React.ReactNode }[] = [
     { key: "mysql", label: "MySQL", component: <MySQLIcon className="h-6" /> },
     { key: "postgres", label: "PostgreSQL", component: <PostgreSQLIcon className="h-6" /> },
-  ];
-
-  // Coming soon databases — shown in Step 1 only, disabled
-  const comingSoonOptions: { key: "mssql" | "sqlite"; label: string; component: React.ReactNode }[] = [
-    { key: "mssql", label: "SQL Server", component: <MSSQLIcon className="h-6" /> },
     { key: "sqlite", label: "SQLite", component: <SQLiteIcon className="h-6" /> },
   ];
 
-  const selectDatabase = (key: "mysql" | "postgres") => {
+  // Coming soon databases — shown in Step 1 only, disabled
+  const comingSoonOptions: { key: "mssql"; label: string; component: React.ReactNode }[] = [
+    { key: "mssql", label: "SQL Server", component: <MSSQLIcon className="h-6" /> },
+  ];
+
+  const selectDatabase = (key: "mysql" | "postgres" | "sqlite") => {
     const name = form.getValues("name").trim();
     if (!name) {
       // Trigger field validation and inform the user
@@ -166,6 +169,12 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
           // Import PostgreSQL DDL
           const { parsePostgreSqlDdlAsync } = await import('../lib/importer/postgres-ddl-parser');
           diagramData = await parsePostgreSqlDdlAsync(values.content, (p, label) => {
+            setProgress(p);
+            if (label) setProgressLabel(label);
+          }, values.reorganizeAfterImport);
+        } else if (dbType === "sqlite") {
+          const { parseSqliteDdlAsync } = await import("../lib/importer/sqlite-ddl-parser");
+          diagramData = await parseSqliteDdlAsync(values.content, (p, label) => {
             setProgress(p);
             if (label) setProgressLabel(label);
           }, values.reorganizeAfterImport);
@@ -314,15 +323,11 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
                   {/* Summary of selections from Step 1 */}
                   <div className="flex items-center justify-between rounded-md border p-3 bg-muted/30">
                     <div className="flex items-center gap-3">
-                      {form.getValues("dbType") === "mysql" ? (
-                        <MySQLIcon className="h-5" />
-                      ) : (
-                        <PostgreSQLIcon className="h-5" />
-                      )}
+                      <DatabaseTypeIcon dbType={selectedDbType} className="h-5" />
                       <div className="text-sm">
                         <div className="font-medium">{form.getValues("name") || "Untitled diagram"}</div>
                         <div className="text-muted-foreground">
-                          Database: {form.getValues("dbType") === "mysql" ? "MySQL" : "PostgreSQL"}
+                          Database: {dbTypeDisplay[selectedDbType]}
                         </div>
                       </div>
                     </div>
@@ -361,7 +366,7 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
                         <FileText className="h-5 w-5" />
                         <div>
                           <CardTitle className="text-base">From SQL (DDL)</CardTitle>
-                          <CardDescription className="text-xs">{form.getValues("dbType") === "mysql" ? "MySQL CREATE TABLE" : "PostgreSQL CREATE TABLE"}</CardDescription>
+                          <CardDescription className="text-xs">{dbTypeDisplay[selectedDbType]} CREATE TABLE</CardDescription>
                         </div>
                       </CardHeader>
                     </Card>
@@ -395,13 +400,13 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
                   </TabsContent>
                   <TabsContent value="sql" className="mt-4 space-y-4">
                     <p className="text-sm text-muted-foreground">
-                      Import a diagram from a {form.getValues("dbType") === "mysql" ? "MySQL" : "PostgreSQL"} `CREATE TABLE` script.
+                      Import a diagram from a {dbTypeDisplay[selectedDbType]} `CREATE TABLE` script.
                     </p>
                     <Alert className="p-3 sm:p-4">
                       <Terminal className="h-4 w-4" />
-                      <AlertTitle className="text-sm sm:text-base">How to get your {form.getValues("dbType") === "mysql" ? "MySQL" : "PostgreSQL"} schema</AlertTitle>
+                      <AlertTitle className="text-sm sm:text-base">How to get your {dbTypeDisplay[selectedDbType]} schema</AlertTitle>
                       <AlertDescription className="space-y-2 text-xs sm:text-sm">
-                        {form.getValues("dbType") === "mysql" ? (
+                        {selectedDbType === "mysql" ? (
                           <>
                             <p className="text-xs sm:text-sm">
                               You can generate a schema file from your database using the `mysqldump` command.
@@ -417,7 +422,7 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
                               The `--no-data` flag ensures only the table structure is exported.
                             </p>
                           </>
-                        ) : (
+                        ) : selectedDbType === "postgres" ? (
                           <>
                             <p className="text-xs sm:text-sm">
                               You can generate a schema file from your PostgreSQL database using the `pg_dump` command.
@@ -431,6 +436,20 @@ export function ImportDialog({ isOpen, onOpenChange, onImportDiagram }: ImportDi
                             <p className="text-xs sm:text-sm">
                               Replace `[username]` and `[database_name]` with your database credentials.
                               The `-s` flag ensures only the schema (table structure) is exported.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs sm:text-sm">
+                              You can extract a SQLite schema using the `sqlite3` command-line tool:
+                            </p>
+                            <pre className="mt-2 p-2 bg-muted rounded-md text-[11px] sm:text-xs font-mono w-full max-w-full whitespace-pre-wrap break-words">
+                              <code>
+                                sqlite3 [database].db &quot;.schema&quot; &gt; schema.sql
+                              </code>
+                            </pre>
+                            <p className="text-xs sm:text-sm">
+                              Paste the contents of `schema.sql` here. Only the schema is imported; table data is not required.
                             </p>
                           </>
                         )}

@@ -42,7 +42,7 @@ export function CreateDiagramDialog({ isOpen, onOpenChange, onCreateDiagram, exi
         message: "A diagram with this name already exists.",
       }
     ),
-    dbType: z.enum(["mysql", "postgres"]),
+    dbType: z.enum(["mysql", "postgres", "sqlite"]),
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -146,12 +146,12 @@ export function CreateDiagramDialog({ isOpen, onOpenChange, onCreateDiagram, exi
     </Dialog>
   );
 }
-  const dbOptions: { key: "mysql" | "postgres"; label: string; component: React.ReactNode }[] = [
+  const dbOptions: { key: "mysql" | "postgres" | "sqlite"; label: string; component: React.ReactNode }[] = [
     { key: "mysql", label: "MySQL", component: <MySQLIcon className="h-6" /> },
     { key: "postgres", label: "PostgreSQL", component: <PostgreSQLIcon className="h-6" /> },
+    { key: "sqlite", label: "SQLite", component: <SQLiteIcon className="h-6" /> },
   ];
 
-  const comingSoonOptions: { key: "mssql" | "sqlite"; label: string; component: React.ReactNode }[] = [
+  const comingSoonOptions: { key: "mssql"; label: string; component: React.ReactNode }[] = [
     { key: "mssql", label: "SQL Server", component: <MSSQLIcon className="h-6" /> },
-    { key: "sqlite", label: "SQLite", component: <SQLiteIcon className="h-6" /> },
   ];

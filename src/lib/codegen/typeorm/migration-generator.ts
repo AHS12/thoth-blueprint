@@ -123,7 +123,7 @@ function generateSingleTableMigration(
 
   // Find CREATE TABLE statement for this specific table
   const tableIdentifier =
-    diagram.dbType === "postgres" ? `"${tableName}"` : `\`${tableName}\``;
+    diagram.dbType === "mysql" ? `\`${tableName}\`` : `"${tableName}"`;
   const createTableSql =
     statements.find(
       (stmt) =>
@@ -166,9 +166,9 @@ export class ${className}${timestamp} implements MigrationInterface {
 
   // Drop table first, then drop types
   const dropTableSql =
-    diagram.dbType === "postgres"
-      ? `DROP TABLE "${tableName}"`
-      : `DROP TABLE \\\`${tableName}\\\``;
+    diagram.dbType === "mysql"
+      ? `DROP TABLE \\\`${tableName}\\\``
+      : `DROP TABLE "${tableName}"`;
 
   migration += `
         await queryRunner.query(\`${dropTableSql}\`);`;

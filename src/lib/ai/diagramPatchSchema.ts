@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const indexTypeEnum = z.enum(["INDEX", "UNIQUE", "FULLTEXT", "SPATIAL"]);
+
 const relationshipTypeEnum = z.enum([
   "one-to-one",
   "one-to-many",
@@ -18,13 +20,38 @@ export const columnInputSchema = z.object({
     .optional(),
   isUnique: z.boolean().optional(),
   isAutoIncrement: z.boolean().optional(),
-  comment: z.string().optional(),
-  enumValues: z.string().optional(),
-  length: z.number().optional(),
-  precision: z.number().optional(),
-  scale: z.number().optional(),
+  comment: z.string().nullable().optional(),
+  enumValues: z.string().nullable().optional(),
+  length: z.number().nullable().optional(),
+  precision: z.number().nullable().optional(),
+  scale: z.number().nullable().optional(),
   isUnsigned: z.boolean().optional(),
-});
+}).strict();
+
+export const columnChangesSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    type: z.string().min(1).optional(),
+    pk: z.boolean().optional(),
+    nullable: z.boolean().optional(),
+    defaultValue: z
+      .union([z.string(), z.number(), z.boolean(), z.null()])
+      .optional(),
+    isUnique: z.boolean().optional(),
+    isAutoIncrement: z.boolean().optional(),
+    comment: z.string().nullable().optional(),
+    enumValues: z.string().nullable().optional(),
+    length: z.number().nullable().optional(),
+    precision: z.number().nullable().optional(),
+    scale: z.number().nullable().optional(),
+    isUnsigned: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one column change is required.",
+  });
+
+const indexColumnsSchema = z.array(z.string().min(1)).min(1);
 
 export const aiOperationSchema = z.discriminatedUnion("op", [
   z.object({
@@ -34,13 +61,29 @@ export const aiOperationSchema = z.discriminatedUnion("op", [
     position: z
       .object({ x: z.number(), y: z.number() })
       .optional(),
-  }),
+  }).strict(),
   z.object({
     op: z.literal("update_table"),
     tableId: z.string().min(1),
     label: z.string().min(1).optional(),
     columns: z.array(columnInputSchema).min(1).optional(),
     comment: z.string().nullable().optional(),
+  }),
+  z.object({
+    op: z.literal("add_column"),
+    tableId: z.string().min(1),
+    column: columnInputSchema,
+  }),
+  z.object({
+    op: z.literal("update_column"),
+    tableId: z.string().min(1),
+    columnId: z.string().min(1),
+    changes: columnChangesSchema,
+  }),
+  z.object({
+    op: z.literal("delete_column"),
+    tableId: z.string().min(1),
+    columnId: z.string().min(1),
   }),
   z.object({
     op: z.literal("delete_table"),
@@ -58,11 +101,38 @@ export const aiOperationSchema = z.discriminatedUnion("op", [
     op: z.literal("delete_relationship"),
     edgeId: z.string().min(1),
   }),
+  z.object({
+    op: z.literal("update_relationship"),
+    edgeId: z.string().min(1),
+    relationshipType: relationshipTypeEnum,
+  }),
+  z.object({
+    op: z.literal("create_index"),
+    tableId: z.string().min(1),
+    name: z.string().min(1),
+    columns: indexColumnsSchema,
+    isUnique: z.boolean().optional(),
+    type: indexTypeEnum.optional(),
+  }),
+  z.object({
+    op: z.literal("update_index"),
+    tableId: z.string().min(1),
+    indexId: z.string().min(1),
+    name: z.string().min(1).optional(),
+    columns: indexColumnsSchema.optional(),
+    isUnique: z.boolean().optional(),
+    type: indexTypeEnum.optional(),
+  }),
+  z.object({
+    op: z.literal("delete_index"),
+    tableId: z.string().min(1),
+    indexId: z.string().min(1),
+  }),
 ]);
 
 export const aiPatchSchema = z.object({
-  summary: z.string().optional(),
-  operations: z.array(aiOperationSchema),
+  summary: z.string(),
+  operations: z.array(aiOperationSchema).max(50),
 });
 
 export type AiPatch = z.infer<typeof aiPatchSchema>;
