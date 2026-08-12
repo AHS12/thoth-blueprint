@@ -20,12 +20,21 @@
   <img src="https://raw.githubusercontent.com/AHS12/thoth-blueprint/refs/heads/main/image2.png" alt="Screenshot 2" width="45%">
 </p>
 
-Thoth Blueprint is a free, powerful database design tool that allows you to visualize your database schema with an intuitive drag-and-drop editor. Create, edit, and export your database designs to various formats, including SQL, DBML, JSON, and SVG. Generate migration files for popular frameworks/ORM like Laravel, TypeORM, and Django.
+**Design databases the way you think.**
+
+Create and evolve **unlimited database schemas** with a visual drag-and-drop editor. Start from scratch or import an existing SQL, DBML, or JSON schema, then shape your database visually, see relationships at a glance, or get help from the built-in **Schema Assistant**.
+
+Export your designs to SQL, DBML, JSON, SVG, or PNG, or generate migrations for Laravel, TypeORM, and Django.
+
+Use your own Gemini or OpenRouter key, or run AI models locally with Ollama and LM Studio.
+
+**Offline-first. Local by default. Your schema stays yours.**
 
 ## Features
 
 - 🎨 **Visual Database Design** - Intuitive drag-and-drop interface for creating database schemas
 - 🧩 **Complete DBML Workflow** - Import DBML, edit/write DBML in a dedicated editor with diagram sync, and export back to DBML
+- 📇 **Dedicated Index Manager** - Create, edit, search, and delete table indexes, including unique and composite indexes
 - 🔄 **Multiple Export Formats** - Export to SQL, DBML, JSON, SVG
 - 🚀 **Framework Migration Generation** - Generate migration files for Laravel, TypeORM, and Django
 - 🔧 **Offline First** - Work on your diagrams anytime, anywhere, with or without an internet connection
@@ -132,15 +141,19 @@ Speed up your workflow by copying and pasting elements:
 
 ### Keyboard Shortcuts
 
-ThothBlueprint includes several keyboard shortcuts to speed up your workflow:
+ThothBlueprint includes a dedicated **Keyboard Shortcuts** dialog with the complete,
+up-to-date shortcut list. Open it from **Help Center → Keyboard Shortcuts** or the
+editor menu's **View Shortcuts** action. The same shortcuts are listed compactly below
+(`Ctrl` becomes `Cmd` on macOS):
 
-- `Ctrl+A` / `Cmd+A` - Add Table
-- `Ctrl+B` / `Cmd+B` - Toggle Sidebar
-- `Ctrl+Z` / `Cmd+Z` - Undo Delete Table
-- `Ctrl+C` / `Cmd+C` - Copy Selection
-- `Ctrl+V` / `Cmd+V` - Paste Selection
-- `Ctrl+Click` / `Cmd+Click` - Select Multiple Nodes
-- `Delete` - Delete Elements
+| Command | Shortcut | Command | Shortcut |
+| --- | --- | --- | --- |
+| Add Table | `Ctrl/Cmd + A` | Toggle Sidebar | `Ctrl/Cmd + B` |
+| Undo Delete Table | `Ctrl/Cmd + Z` | Copy Selection | `Ctrl/Cmd + C` |
+| Paste Selection | `Ctrl/Cmd + V` | Select Multiple Nodes | `Ctrl/Cmd + Click` |
+| Pan Canvas (hold) | `Space` | Delete Table, Notes, Zones | `Delete` |
+| Zoom In | `Ctrl/Cmd + +` or `Ctrl/Cmd + =` | Zoom Out | `Ctrl/Cmd + -` |
+| Reset Zoom | `Ctrl/Cmd + 0` |  |  |
 
 ### AI Schema Assistant
 

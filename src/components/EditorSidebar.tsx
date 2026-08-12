@@ -293,8 +293,9 @@ export default function EditorSidebar({
   }, []);
 
   const showRowHeaderMeta = sidebarWidth >= 420;
-  const useLongTabLabels = sidebarWidth >= 420;
-  const showTabCounts = sidebarWidth >= 520;
+  // Four tabs plus the add button need more room than the original three-tab layout.
+  const useLongTabLabels = sidebarWidth >= 560;
+  const showTabCounts = sidebarWidth >= 640;
 
   const sidebarScale = useStore((state) => state.settings.sidebarScale);
 

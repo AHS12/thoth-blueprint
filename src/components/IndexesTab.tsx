@@ -223,14 +223,14 @@ export default function IndexesTab({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-shrink-0 gap-2 px-4 pb-2 pt-1">
-        <div className="relative min-w-0 flex-1">
+      <div className="flex flex-shrink-0 flex-wrap items-center gap-2 px-4 pb-2 pt-1">
+        <div className="relative min-w-0 flex-1 basis-48">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Search indexes..."
-            className="pr-8 pl-9"
+            className="pr-8 pl-8"
             aria-label="Search indexes"
           />
           {filter && (
@@ -258,7 +258,7 @@ export default function IndexesTab({
 
       <div className="min-h-0 flex-1 overflow-hidden px-4">
         <ScrollArea className="h-full">
-          <div className="space-y-5 pb-4">
+          <div className="space-y-5 pb-4 pr-4">
             {groupedEntries.length > 0 ? (
               groupedEntries.map(({ table, entries: tableEntries }) => (
                 <section key={table.id}>
@@ -285,9 +285,13 @@ export default function IndexesTab({
                       return (
                         <div
                           key={entry.key}
-                          className="flex items-center gap-1 rounded-md border bg-background p-1"
+                          className="grid w-full min-w-0 max-w-full items-center rounded-md border bg-background p-1"
+                          style={{
+                            gridTemplateColumns:
+                              "minmax(0, 1fr) calc(2rem * var(--sb, 1))",
+                          }}
                         >
-                          <div className="flex min-w-0 flex-1 items-center px-2 py-1.5 text-left">
+                          <div className="flex min-w-0 overflow-hidden items-center py-1.5 pl-2 text-left">
                             {isPrimary ? (
                               <KeyRound className="mr-2 h-4 w-4 shrink-0 text-yellow-500" />
                             ) : (
@@ -295,7 +299,7 @@ export default function IndexesTab({
                             )}
                             <span className="min-w-0 flex-1">
                               <span className="flex min-w-0 items-center gap-2">
-                                <span className="truncate text-sm font-medium">
+                                <span className="min-w-0 truncate text-sm font-medium">
                                   {name}
                                 </span>
                                 {!isPrimary && entry.index.isUnique && (
@@ -308,7 +312,7 @@ export default function IndexesTab({
                                 )}
                               </span>
                               <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                                <span className="truncate">
+                                <span className="min-w-0 truncate">
                                   {entry.columns.length > 0
                                     ? entry.columns.join(", ")
                                     : "No columns"}
@@ -318,55 +322,57 @@ export default function IndexesTab({
                             </span>
                           </div>
 
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                aria-label={`Actions for ${name}`}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {!isPrimary && (
-                                <DropdownMenuItem
-                                  onSelect={() =>
-                                    setIndexToEdit({
-                                      tableId: table.id,
-                                      index: entry.index,
-                                    })
-                                  }
+                          <div className="flex items-center justify-end">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  aria-label={`Actions for ${name}`}
                                 >
-                                  Edit
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                onSelect={() => onFocusIndex(table.id)}
-                              >
-                                Focus table
-                              </DropdownMenuItem>
-                              {!isPrimary && (
-                                <>
-                                  <DropdownMenuSeparator />
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {!isPrimary && (
                                   <DropdownMenuItem
-                                    disabled={isLocked}
-                                    className="text-destructive focus:text-destructive"
                                     onSelect={() =>
-                                      setIndexToDelete({
-                                        table,
+                                      setIndexToEdit({
+                                        tableId: table.id,
                                         index: entry.index,
                                       })
                                     }
                                   >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
+                                    Edit
                                   </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                )}
+                                <DropdownMenuItem
+                                  onSelect={() => onFocusIndex(table.id)}
+                                >
+                                  Focus table
+                                </DropdownMenuItem>
+                                {!isPrimary && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      disabled={isLocked}
+                                      className="text-destructive focus:text-destructive"
+                                      onSelect={() =>
+                                        setIndexToDelete({
+                                          table,
+                                          index: entry.index,
+                                        })
+                                      }
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       );
                     })}
