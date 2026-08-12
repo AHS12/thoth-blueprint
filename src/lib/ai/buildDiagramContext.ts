@@ -53,13 +53,14 @@ export interface DiagramContextPayload {
     includedTables: number;
     estimatedTokens: number;
     sourceEstimatedTokens: number;
-    maxCharacters: number;
+    maxCharacters: number | null;
     truncated: boolean;
   };
 }
 
 type DiagramContextOptions = {
-  maxCharacters?: number;
+  /** Omit this to send the complete current diagram snapshot. */
+  maxCharacters?: number | null;
   focusText?: string;
 };
 
@@ -191,7 +192,6 @@ export function buildDiagramContext(
   }
   const editorFocus = focusParts.length > 0 ? focusParts.join(" ") : null;
 
-  const maxCharacters = options.maxCharacters ?? 24000;
   const basePayload = {
     dbType,
     selectedNodeId,
@@ -203,7 +203,8 @@ export function buildDiagramContext(
   };
 
   const fullJsonLength = JSON.stringify(basePayload).length;
-  if (fullJsonLength <= maxCharacters) {
+  const maxCharacters = options.maxCharacters ?? null;
+  if (maxCharacters === null || fullJsonLength <= maxCharacters) {
     return {
       ...basePayload,
       contextStats: {
